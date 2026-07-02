@@ -35,7 +35,24 @@ def conn() -> sqlite3.Connection:
     DB.parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB)
     c.executescript(_SCHEMA)
+    _migrate(c)
     return c
+
+
+def _migrate(c: sqlite3.Connection) -> None:
+    """가벼운 ADD COLUMN 마이그레이션 — CREATE TABLE IF NOT EXISTS는 기존 테이블에 새 컬럼을
+    안 붙여줘서, 이미 만들어진 DB에도 신규 컬럼을 채워준다."""
+    tcols = {r[1] for r in c.execute("PRAGMA table_info(bot_trades)").fetchall()}
+    if "score" not in tcols:
+        c.execute("ALTER TABLE bot_trades ADD COLUMN score REAL")
+    if "note" not in tcols:
+        c.execute("ALTER TABLE bot_trades ADD COLUMN note TEXT")
+    ccols = {r[1] for r in c.execute("PRAGMA table_info(bot_config)").fetchall()}
+    if "min_buy_score" not in ccols:  # 이 점수 이상인 BUY만 매수(약한 BUY는 제외)
+        c.execute("ALTER TABLE bot_config ADD COLUMN min_buy_score REAL NOT NULL DEFAULT 1.6")
+    if "max_new_buys_per_run" not in ccols:  # 한 사이클에 신규 매수 최대 건수(한꺼번에 다 사지 않음)
+        c.execute("ALTER TABLE bot_config ADD COLUMN max_new_buys_per_run INTEGER NOT NULL DEFAULT 2")
+    c.commit()
 
 
 # ---------- users / sessions ----------
@@ -149,9 +166,11 @@ def bot_config_get() -> dict:
     c.execute("INSERT OR IGNORE INTO bot_config(id,enabled,max_positions,position_pct,updated) "
               "VALUES(1,0,10,0.08,?)", (int(time.time()),))
     c.commit()
-    row = c.execute("SELECT enabled,max_positions,position_pct,updated FROM bot_config WHERE id=1").fetchone()
+    row = c.execute("SELECT enabled,max_positions,position_pct,updated,min_buy_score,max_new_buys_per_run "
+                    "FROM bot_config WHERE id=1").fetchone()
     c.close()
-    return {"enabled": bool(row[0]), "max_positions": row[1], "position_pct": row[2], "updated": row[3]}
+    return {"enabled": bool(row[0]), "max_positions": row[1], "position_pct": row[2], "updated": row[3],
+            "min_buy_score": row[4], "max_new_buys_per_run": row[5]}
 
 
 def bot_config_set_enabled(enabled: bool) -> None:
@@ -201,18 +220,21 @@ def bot_position_delete(ticker: str) -> None:
 
 # ---------- bot_trades ----------
 def bot_trade_log(ticker: str, name: str, side: str, qty: int, price: float, reason: str,
-                   order_no: str | None) -> None:
+                   order_no: str | None, score: float | None = None, note: str | None = None) -> None:
+    """score=매매 시점 시그널 종합점수, note=타이밍·수량 산정 근거(사람이 읽는 한 줄)."""
     c = conn()
-    c.execute("INSERT INTO bot_trades(ticker,name,side,qty,price,reason,order_no,ts) "
-              "VALUES(?,?,?,?,?,?,?,?)", (ticker, name, side, qty, price, reason, order_no, int(time.time())))
+    c.execute("INSERT INTO bot_trades(ticker,name,side,qty,price,reason,order_no,ts,score,note) "
+              "VALUES(?,?,?,?,?,?,?,?,?,?)",
+              (ticker, name, side, qty, price, reason, order_no, int(time.time()), score, note))
     c.commit()
     c.close()
 
 
 def bot_trades_recent(limit: int = 20) -> list[dict]:
     c = conn()
-    rows = c.execute("SELECT ticker,name,side,qty,price,reason,order_no,ts FROM bot_trades "
+    rows = c.execute("SELECT ticker,name,side,qty,price,reason,order_no,ts,score,note FROM bot_trades "
                       "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     c.close()
-    return [{"ticker": t, "name": n, "side": s, "qty": q, "price": p, "reason": r, "order_no": o, "ts": ts}
-            for t, n, s, q, p, r, o, ts in rows]
+    return [{"ticker": t, "name": n, "side": s, "qty": q, "price": p, "reason": r, "order_no": o,
+             "ts": ts, "score": sc, "note": nt}
+            for t, n, s, q, p, r, o, ts, sc, nt in rows]

@@ -29,17 +29,51 @@ def _setup_common(monkeypatch, universe, prices, signals, balance_sequence):
     monkeypatch.setattr(bot.kis, "balance", lambda creds=None: next(calls))
 
 
+def _set_cfg(**kw):
+    """테스트용 bot_config 값 오버라이드(min_buy_score / max_new_buys_per_run / max_positions 등)."""
+    bot.db.bot_config_get()  # 기본 행 시딩
+    c = bot.db.conn()
+    for k, v in kw.items():
+        c.execute(f"UPDATE bot_config SET {k}=? WHERE id=1", (v,))
+    c.commit()
+    c.close()
+
+
 def test_no_credentials(monkeypatch):
     monkeypatch.setattr(bot.config, "kis_credentials", lambda: None)
     out = bot.run_once()
     assert out == {"ok": False, "reason": "KIS 인증정보 없음(.env 확인)"}
 
 
-def test_outside_market_hours_blocked_unless_forced(monkeypatch):
+def test_outside_market_hours_blocks_real_run(monkeypatch):
     monkeypatch.setattr(bot.config, "kis_credentials", lambda: _creds())
     monkeypatch.setattr(bot, "is_market_hours", lambda: False)
     out = bot.run_once()
     assert out["ok"] is False and "장 시간" in out["reason"]
+
+
+def test_dry_run_ignores_market_hours_and_places_no_orders(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    universe = [{"ticker": "AAA", "name": "가"}]
+    prices = {"AAA": [100.0]}
+    signals = [_sig("AAA", "가", "BUY", score=2.5)]
+    bal = {"cash": 10_000.0, "total_eval": 10_000.0, "holdings": []}
+    monkeypatch.setattr(bot.config, "kis_credentials", lambda: _creds())
+    monkeypatch.setattr(bot, "is_market_hours", lambda: False)  # 장 밖이어도
+    monkeypatch.setattr(bot.store, "load_universe", lambda: universe)
+    monkeypatch.setattr(bot.store, "load_price_series", lambda: prices)
+    monkeypatch.setattr(bot.store, "load_fundamentals", lambda: {})
+    monkeypatch.setattr(bot.engine, "evaluate", lambda *a, **k: signals)
+    monkeypatch.setattr(bot.kis, "balance", lambda creds=None: bal)
+    ordered = []
+    monkeypatch.setattr(bot.kis, "place_order", lambda *a, **k: ordered.append(a) or {"order_no": "1"})
+
+    out = bot.run_once(dry_run=True)
+    assert out["ok"] is True and out["dry_run"] is True
+    assert [b["ticker"] for b in out["buys"]] == ["AAA"]  # 계획엔 잡히지만
+    assert ordered == []                                   # 실주문은 없음
+    assert bot.db.bot_position_get("AAA") is None           # DB에도 안 씀
+    assert bot.db.bot_trades_recent() == []
 
 
 def test_balance_failure(monkeypatch):
@@ -76,7 +110,9 @@ def test_sells_on_stop_loss(tmp_path, monkeypatch):
 
     out = bot.run_once()
     assert out["ok"] is True
-    assert out["sells"] == [{"ticker": "005930", "qty": 10, "reason": "STOP_LOSS", "ok": True}]
+    assert len(out["sells"]) == 1
+    s = out["sells"][0]
+    assert (s["ticker"], s["qty"], s["reason"], s["ok"]) == ("005930", 10, "STOP_LOSS", True)
     assert orders == [("005930", "sell", 10)]
     assert bot.db.bot_position_get("005930") is None  # 매도 성공 -> 포지션 삭제
 
@@ -93,7 +129,9 @@ def test_sells_on_signal_flip_when_no_risk_trigger(tmp_path, monkeypatch):
     monkeypatch.setattr(bot.kis, "place_order", lambda *a, **k: {"order_no": "1", "order_time": "t"})
 
     out = bot.run_once()
-    assert out["sells"] == [{"ticker": "005930", "qty": 10, "reason": "SIGNAL", "ok": True}]
+    assert len(out["sells"]) == 1
+    s = out["sells"][0]
+    assert (s["ticker"], s["qty"], s["reason"], s["ok"]) == ("005930", 10, "SIGNAL", True)
 
 
 def test_holds_position_and_tracks_peak_when_no_exit(tmp_path, monkeypatch):
@@ -146,6 +184,7 @@ def test_buys_top_scored_signals_respecting_slots_and_lot_size(tmp_path, monkeyp
     # position_pct=0.08(기본) * total_eval(10000) = 800원 배분 -> 100원 종목은 8주, EXP(999999원)는 스킵
     bal = {"cash": 10_000.0, "total_eval": 10_000.0, "holdings": []}
     _setup_common(monkeypatch, universe, prices, signals, [bal, bal, bal])
+    _set_cfg(min_buy_score=0.0, max_new_buys_per_run=10)  # 이 테스트는 점수순·정수주 검증 목적 → 선택성 완화
 
     orders = []
     monkeypatch.setattr(bot.kis, "place_order", lambda ticker, side, qty, price=None, creds=None:
@@ -169,13 +208,41 @@ def test_buys_respect_max_positions_slot_limit(tmp_path, monkeypatch):
     _setup_common(monkeypatch, universe, prices, signals, [bal, bal, bal])
     monkeypatch.setattr(bot.kis, "place_order", lambda *a, **k: {"order_no": "1", "order_time": "t"})
 
-    # max_positions=1로 좁혀서 슬롯 제한 확인
-    bot.db.bot_config_get()  # 기본 행 시딩
-    conn = bot.db.conn()
-    conn.execute("UPDATE bot_config SET max_positions=1 WHERE id=1")
-    conn.commit()
-    conn.close()
+    # max_positions=1로 좁혀서 슬롯 제한 확인(선택성 필터는 완화)
+    _set_cfg(max_positions=1, min_buy_score=0.0, max_new_buys_per_run=10)
 
     out = bot.run_once()
     assert len(out["buys"]) == 1
     assert out["buys"][0]["ticker"] == "T2"  # 점수 가장 높은 것만
+
+
+def test_skips_weak_buys_below_min_score(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    universe = [{"ticker": "AAA", "name": "가"}, {"ticker": "BBB", "name": "나"}]
+    prices = {"AAA": [100.0], "BBB": [100.0]}
+    signals = [_sig("AAA", "가", "BUY", score=1.0), _sig("BBB", "나", "BUY", score=2.0)]
+    bal = {"cash": 10_000.0, "total_eval": 10_000.0, "holdings": []}
+    _setup_common(monkeypatch, universe, prices, signals, [bal, bal, bal])
+    _set_cfg(min_buy_score=1.6, max_new_buys_per_run=10)
+    orders = []
+    monkeypatch.setattr(bot.kis, "place_order", lambda ticker, side, qty, price=None, creds=None:
+                         orders.append(ticker) or {"order_no": "1"})
+
+    out = bot.run_once()
+    assert orders == ["BBB"]  # AAA(1.0<1.6)는 약한 BUY라 제외
+    assert out["skipped_weak_buys"] == 1
+
+
+def test_max_new_buys_per_run_caps_buys(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    universe = [{"ticker": f"T{i}", "name": f"종목{i}"} for i in range(5)]
+    prices = {f"T{i}": [100.0] for i in range(5)}
+    signals = [_sig(f"T{i}", f"종목{i}", "BUY", score=2.0 + i) for i in range(5)]  # 전부 강한 BUY
+    bal = {"cash": 100_000.0, "total_eval": 100_000.0, "holdings": []}
+    _setup_common(monkeypatch, universe, prices, signals, [bal, bal, bal])
+    _set_cfg(min_buy_score=1.0, max_new_buys_per_run=2, max_positions=10)
+    monkeypatch.setattr(bot.kis, "place_order", lambda *a, **k: {"order_no": "1"})
+
+    out = bot.run_once()
+    assert len(out["buys"]) == 2  # 강한 BUY가 5개여도 한 사이클엔 2건만
+    assert [b["ticker"] for b in out["buys"]] == ["T4", "T3"]  # 점수 상위 2개

@@ -21,7 +21,7 @@
     font-size:14px; padding:9px 12px; border:1px solid var(--line); border-radius:10px;
     background:#fff; color:var(--txt); outline:none; }
   select:focus, input:focus, .ctrl:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--ring); }
-  header { padding:15px 24px; border-bottom:1px solid var(--line); display:flex;
+  header { flex:0 0 auto; padding:15px 24px; border-bottom:1px solid var(--line); display:flex;
            align-items:center; gap:14px; flex-wrap:wrap; min-height:64px; box-sizing:border-box;
            background:var(--panel); box-shadow:0 3px 10px rgba(2,32,71,.10); position:relative; z-index:600; }
   header h1 { font-size:18px; margin:0; white-space:nowrap; }
@@ -31,6 +31,15 @@
          color:var(--dim); cursor:pointer; font-size:14px; font-weight:600; }
   .tab.on { color:#fff; background:var(--accent); border-color:var(--accent); }
   .right { margin-left:auto; display:flex; gap:10px; align-items:center; }
+  /* 시황 바 — 네비게이션 바로 아래 전역 노출 밴드(단순화) */
+  .market-bar { display:flex; align-items:center; gap:7px 12px; flex-wrap:wrap;
+    padding:9px clamp(16px,3.5vw,44px); border-bottom:1px solid var(--line); background:var(--panel); }
+  .market-bar .tb-label { font-size:11px; color:var(--dim); font-weight:700; }
+  .market-bar .tb-detail { font-size:12px; color:var(--dim); }
+  .market-bar .tb-sep { width:1px; height:16px; background:var(--line); }
+  .market-bar .macro-chip { flex-direction:row; align-items:baseline; gap:5px; padding:3px 9px; min-width:0; }
+  .market-bar .macro-chip .mc-label { font-size:10px; }
+  .market-bar .macro-chip .mc-value { font-size:12px; }
   .btn { padding:8px 14px; border:1px solid var(--line); border-radius:var(--r-sm); background:var(--panel);
          color:var(--txt); cursor:pointer; font-size:13px; }
   .btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:700; }
@@ -72,13 +81,43 @@
   .macro-chip .mc-chg { font-size:10px; font-variant-numeric:tabular-nums; }
   .mc-bad { color:var(--sig-sell); } .mc-good { color:var(--sig-buy); } .mc-flat { color:var(--dim); }
   .sig-workspace { display:flex; gap:16px; align-items:stretch;
-    height:clamp(480px, 74vh, 900px); }
-  .sig-list { flex:0 0 42%; min-width:0; overflow:auto; padding:0; }
+    height:clamp(520px, 80vh, 980px); }
+  .sig-list { flex:0 0 380px; min-width:0; overflow-y:auto; overflow-x:hidden; padding:0; }
+  .sig-list table.dtable th, .sig-list table.dtable td { padding:8px 7px; }
+  .sig-list table.dtable td:nth-child(2) { white-space:normal; }  /* 긴 종목명은 줄바꿈(가로 스크롤 방지) */
   .sig-list .dtable th { position:sticky; top:0; background:var(--panel); z-index:1; }
-  .sig-chart-pane { flex:1 1 58%; min-width:0; display:flex; flex-direction:column; }
+  .sig-chart-pane { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
   .sig-chart-pane .pane-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
   #signal-chart { flex:1 1 auto; min-height:0; width:100%; }
   table.dtable tr.selected-row { background:var(--accent-weak); }
+  .fav-star { cursor:pointer; color:var(--sig-neutral); font-size:15px; user-select:none; }
+  .fav-star.on { color:#f59e0b; }
+
+  /* ===== 사이클 ===== */
+  .phase-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+  .phase-card { border:1px solid var(--line); border-radius:var(--r-md); padding:14px 16px; background:var(--panel); }
+  .phase-card.current { border-color:var(--accent); box-shadow:0 0 0 2px var(--ring); }
+  .phase-card h4 { margin:0 0 8px; font-size:15px; }
+  .phase-meta { font-size:12px; color:var(--dim); margin-bottom:10px; line-height:1.55; }
+  .sector-chip { display:inline-block; padding:3px 10px; margin:0 4px 5px 0; border:1px solid var(--line);
+    border-radius:999px; font-size:12px; background:var(--bg); color:var(--dim); }
+  .sector-chip.link { cursor:pointer; color:var(--accent); border-color:var(--ring); }
+  .sector-chip.link:hover { background:var(--accent-weak); }
+
+  /* ===== 밸류체인 ===== */
+  .vc-sectors { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
+  .vc-sectors button { padding:7px 15px; border:1px solid var(--line); border-radius:999px;
+    background:var(--panel); color:var(--dim); font-size:13px; font-weight:600; cursor:pointer; }
+  .vc-sectors button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .vc-stages { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:16px; }
+  .vc-stage { border:1px solid var(--line); border-radius:var(--r-md); padding:16px; background:var(--panel); }
+  .vc-stage h4 { margin:0 0 4px; font-size:14px; }
+  .vc-stage .st-desc { font-size:12px; color:var(--dim); margin-bottom:12px; line-height:1.5; }
+  .vc-grp-label { font-size:11px; color:var(--dim); font-weight:700; margin:10px 0 6px; }
+  .vc-co { display:inline-block; padding:4px 10px; margin:0 5px 6px 0; border:1px solid var(--line);
+    border-radius:8px; font-size:12px; background:var(--bg); }
+  .vc-co.link { cursor:pointer; color:var(--accent); border-color:var(--ring); }
+  .vc-co.link:hover { background:var(--accent-weak); }
   .card { border:1px solid var(--line); border-radius:var(--r-lg); background:var(--panel); padding:20px; }
   .card:hover { box-shadow:var(--shadow); }
   .placeholder { color:var(--dim); font-size:13px; padding:32px 0; text-align:center; }
@@ -128,6 +167,8 @@
     .tab { padding:6px 10px; font-size:12px; white-space:nowrap; }
     .macro-chip { flex:1 1 44%; min-width:0; }
     .view-doc, .view-app { padding-left:14px; padding-right:14px; }
+    .card-row { flex-wrap:wrap; }
+    .card-row > .card { flex:1 1 42%; }
   }
 
   #authGate { position:fixed; inset:0; z-index:9999; display:none; align-items:center; justify-content:center;
@@ -152,10 +193,10 @@
   <h1>Signal Desk</h1>
   <div class="tabs">
     <button class="tab" data-tab="signal" onclick="switchTab('signal')">시그널</button>
+    <button class="tab" data-tab="trading" onclick="switchTab('trading')">트레이딩</button>
     <button class="tab" data-tab="valuation" onclick="switchTab('valuation')">저평가</button>
-    <button class="tab" data-tab="candidates" onclick="switchTab('candidates')">후보</button>
-    <button class="tab" data-tab="portfolio" onclick="switchTab('portfolio')">포트폴리오</button>
-    <button class="tab" data-tab="report" onclick="switchTab('report')">AI리포트</button>
+    <button class="tab" data-tab="cycle" onclick="switchTab('cycle')">사이클</button>
+    <button class="tab" data-tab="valuechain" onclick="switchTab('valuechain')">밸류체인</button>
   </div>
   <div class="right">
     <span id="myPageLabel" class="btn" onclick="switchTab('mypage')" style="cursor:pointer"></span>
@@ -163,56 +204,64 @@
   </div>
 </header>
 
+<div class="market-bar" id="market-ribbon">
+  <span class="tb-label">시황</span>
+  <span id="regime-pill" class="sig-pill">-</span>
+  <span id="regime-detail" class="tb-detail"></span>
+  <span class="tb-sep" id="macro-sep" style="display:none"></span>
+  <span id="macro-bias" class="sig-pill" style="display:none">-</span>
+  <div class="macro-chips" id="macro-chips"></div>
+</div>
+
 <main>
   <div id="view-signal" class="view-app" style="display:none">
-    <div class="sig-topbar">
-      <div class="tb-group">
-        <span class="tb-label">시장 국면</span>
-        <span id="regime-pill" class="sig-pill">-</span>
-        <span id="regime-detail" class="tb-detail"></span>
-      </div>
-      <div class="tb-sep" id="macro-sep" style="display:none"></div>
-      <div class="tb-group" id="macro-group" style="display:none">
-        <span class="tb-label">거시 시황</span>
-        <span id="macro-bias" class="sig-pill">-</span>
-        <div class="macro-chips" id="macro-chips"></div>
-      </div>
-    </div>
     <div class="sig-workspace">
       <div class="sig-list card" style="padding:0">
         <div id="signal-body" class="placeholder" style="padding:32px 0">불러오는 중…</div>
       </div>
       <div class="sig-chart-pane card">
         <div class="pane-head">
-          <span id="signal-chart-title" style="font-weight:700;font-size:15px">종목을 선택하세요</span>
+          <span id="signal-chart-title" style="font-weight:700;font-size:16px">종목을 선택하세요</span>
+          <span id="signal-chart-sub" class="tb-detail"></span>
         </div>
+        <div id="signal-intro" style="display:none;font-size:12px;color:var(--dim);margin:0 0 8px;line-height:1.5"></div>
         <div id="signal-narrative" class="placeholder" style="display:none;background:var(--accent-weak);
           border-radius:var(--r-md);padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:10px;text-align:left"></div>
+        <div id="signal-legend" style="display:none;font-size:11px;color:var(--dim);margin-bottom:4px">
+          <span style="color:var(--sig-buy);font-weight:700">▲ 매수</span> · <span style="color:var(--sig-sell);font-weight:700">▼ 매도</span> 시그널 발생 지점 · 음영 = 시그널 유지 구간</div>
         <div id="signal-chart"></div>
       </div>
     </div>
   </div>
 
   <div id="view-valuation" class="view-doc" style="display:none">
-    <h2 class="page-head">저평가</h2>
-    <p class="page-desc">PER·PBR이 유니버스 내 상대적으로 낮은(저평가) 순으로 정렬합니다 — 섹터 분류가
-      붙기 전까지는 전체 유니버스 기준 상대 순위입니다.</p>
+    <h2 class="page-head">저평가 <span style="color:var(--dim);font-size:14px;font-weight:600">· 발견</span></h2>
+    <p class="page-desc">PER·PBR이 유니버스 내 상대적으로 낮은(저평가) 순으로 정렬합니다 — 사이클·밸류체인에서
+      주목한 섹터의 종목이 실제로 싼지 여기서 확인하세요. 섹터 분류 전까지는 전체 유니버스 상대 순위입니다.</p>
     <div class="card"><div id="valuation-body" class="placeholder">불러오는 중…</div></div>
   </div>
 
-  <div id="view-candidates" class="view-doc" style="display:none">
-    <h2 class="page-head">후보</h2>
-    <p class="page-desc">눌림목·낙폭과대·IPO(공모주)·실적서프라이즈·턴어라운드 후보를 기회도순으로 통합 조회합니다.</p>
-    <div class="card"><div id="candidates-body" class="placeholder">불러오는 중…</div></div>
+  <div id="view-cycle" class="view-app" style="display:none">
+    <h2 class="page-head">사이클</h2>
+    <p class="page-desc">경기순환(회복→확장→둔화→수축)과 물가·금리 흐름에 따라 어떤 산업이 주도하는지 —
+      현재 위치는 미 CPI·금리(FRED)로 근사 추정합니다. 주도섹터를 누르면 밸류체인으로 연결됩니다.</p>
+    <div class="card" id="cycle-current" style="margin-bottom:16px"><div class="placeholder" style="padding:8px 0">불러오는 중…</div></div>
+    <div class="card" style="margin-bottom:16px"><div id="cycle-chart" style="height:300px"></div></div>
+    <div class="phase-grid" id="cycle-phases"></div>
   </div>
 
-  <div id="view-portfolio" class="view-app" style="display:none">
-    <h2 class="page-head">포트폴리오</h2>
-    <p class="page-desc">시그널 기반 자동매매(KIS 모의투자)와 관심종목을 한 곳에서 관리합니다.</p>
-    <div class="seg-toggle">
-      <button class="on" id="seg-bot-btn" onclick="switchPortfolioSegment('bot')">자동매매</button>
-      <button id="seg-watch-btn" onclick="switchPortfolioSegment('watch')">관심종목</button>
-    </div>
+  <div id="view-valuechain" class="view-app" style="display:none">
+    <h2 class="page-head">밸류체인</h2>
+    <p class="page-desc">섹터별 업스트림~다운스트림 구조와 국내(코스피)·해외(나스닥) 대표기업.
+      국내 기업을 누르면 시그널 차트로 이동합니다. (구성은 큐레이션 스냅샷 · 추천 아님)</p>
+    <div class="vc-sectors" id="vc-sectors"></div>
+    <div id="vc-detail"><div class="placeholder">불러오는 중…</div></div>
+  </div>
+
+  <div id="view-trading" class="view-app" style="display:none">
+    <h2 class="page-head">트레이딩 <span style="color:var(--dim);font-size:14px;font-weight:600">· 시그널 기반 자동매매 봇</span></h2>
+    <p class="page-desc">시그널을 근거로 봇이 KIS 모의계좌를 실시간 운용합니다. 모든 매매는 타이밍·수량 근거를
+      남기고, 안전장치(장 시간·손절·개수 제한)는 항상 강제됩니다. 관심종목은 시그널 탭의 ⭐로 관리하세요.</p>
 
     <div id="portfolio-bot">
       <div class="card-row">
@@ -226,9 +275,13 @@
           <span class="stat-label" style="margin:0">봇 상태:</span>
           <span id="bot-status-label" style="font-weight:700">-</span>
           <button class="btn primary" id="bot-toggle-btn" onclick="toggleBot()">켜기</button>
-          <button class="btn" onclick="runBotNow()">지금 실행(테스트)</button>
+          <button class="btn" onclick="runBotNow()">지금 실행</button>
+          <button class="btn" onclick="previewBot()">판단 미리보기</button>
           <span class="stat-label" id="bot-kis-status" style="margin-left:auto"></span>
         </div>
+        <div class="stat-label" id="bot-rules" style="margin:10px 0 0"></div>
+        <div id="bot-plan" style="display:none;margin-top:10px;font-size:12px;background:var(--accent-weak);
+          border-radius:var(--r-md);padding:10px 12px;line-height:1.6"></div>
       </div>
       <div class="split">
         <div class="card">
@@ -242,26 +295,6 @@
           <div id="bot-allocation-chart" style="height:360px"></div>
         </div>
       </div>
-    </div>
-
-    <div id="portfolio-watch" style="display:none">
-      <div class="card">
-        <div class="row" style="margin-bottom:14px">
-          <input id="wl_ticker" type="text" placeholder="종목코드 또는 티커 (예: 005930)" class="ctrl">
-          <input id="wl_label" type="text" placeholder="메모(선택)" class="ctrl">
-          <button class="btn primary" onclick="addWatch()">추가</button>
-        </div>
-        <ul class="watchlist" id="watchlist-body"></ul>
-      </div>
-    </div>
-  </div>
-
-  <div id="view-report" class="view-doc" style="display:none">
-    <h2 class="page-head">AI 리포트</h2>
-    <p class="page-desc">관심 종목 80% + 신규 발굴 20% 블렌드로 리포트를 생성합니다.</p>
-    <div class="card">
-      <button class="btn primary" onclick="requestAiReport()">리포트 생성</button>
-      <div id="report-body" class="placeholder"></div>
     </div>
   </div>
 
@@ -351,30 +384,20 @@
 </dialog>
 
 <script>
-const _ROUTES = ['signal','valuation','candidates','portfolio','report','mypage'];
+const _ROUTES = ['signal','trading','valuation','cycle','valuechain','mypage'];
 let _userEmail = '', _profile = {};
-let _portfolioSegment = 'bot';
 
 function switchTab(t){
   if(!_ROUTES.includes(t)) t = 'signal';
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   _ROUTES.forEach(v => { const el = document.getElementById('view-' + v); if (el) el.style.display = (v === t) ? '' : 'none'; });
-  if (t === 'signal') { loadSignals(); loadRegime(); loadMacro(); }
+  if (t === 'signal') loadSignals();  // 시황 리본은 전역(startApp에서 로드)
   if (t === 'valuation') loadValuation();
-  if (t === 'candidates') loadStub('candidates', '/api/candidates/all');
-  if (t === 'portfolio') switchPortfolioSegment(_portfolioSegment);
+  if (t === 'cycle') loadCycle();
+  if (t === 'valuechain') loadValuechain();
+  if (t === 'trading') loadBotState();
   if (t === 'mypage') fillMyPage();
   if (location.hash.slice(1) !== t) history.replaceState(null, '', '#' + t);
-}
-
-function switchPortfolioSegment(seg){
-  _portfolioSegment = seg;
-  document.getElementById('seg-bot-btn').classList.toggle('on', seg === 'bot');
-  document.getElementById('seg-watch-btn').classList.toggle('on', seg === 'watch');
-  document.getElementById('portfolio-bot').style.display = seg === 'bot' ? '' : 'none';
-  document.getElementById('portfolio-watch').style.display = seg === 'watch' ? '' : 'none';
-  if (seg === 'bot') loadBotState();
-  if (seg === 'watch') loadWatchlist();
 }
 
 function routeFromHash(){
@@ -386,21 +409,150 @@ window.addEventListener('hashchange', routeFromHash);
 window.addEventListener('resize', () => {
   if (_signalChart) _signalChart.resize();
   if (_botChart) _botChart.resize();
+  if (_cycleChart) _cycleChart.resize();
+  if (_vcChart) _vcChart.resize();
 });
-
-async function loadStub(key, url){
-  const el = document.getElementById(key + '-body');
-  el.textContent = '불러오는 중…';
-  try {
-    const d = await (await fetch(url)).json();
-    el.textContent = d.ready ? JSON.stringify(d) : '아직 준비 중인 기능입니다 — 2단계 이후 채워집니다.';
-  } catch (e) {
-    el.textContent = '불러오지 못했습니다.';
-  }
-}
 
 function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmtNum(n, digits){ return (n == null) ? '-' : n.toFixed(digits ?? 2); }
+function fmtKRW(n){  // 큰 금액은 억/만 단위로 압축(카드 넘침 방지)
+  if (n == null) return '-';
+  if (n >= 1e8) return (n / 1e8).toFixed(2) + '억원';
+  if (n >= 1e4) return Math.round(n / 1e4).toLocaleString() + '만원';
+  return Math.round(n).toLocaleString() + '원';
+}
+
+// ===== 탭 간 이동(사이클 → 밸류체인 → 시그널) =====
+let _pendingSignalTicker = null, _vcData = null, _vcCurrent = null;
+function gotoValuechain(key){ _vcCurrent = key; switchTab('valuechain'); }
+function gotoSignal(ticker){ _pendingSignalTicker = ticker; switchTab('signal'); }
+
+// ===== 사이클 =====
+const _PHASE_AREA = {
+  recovery: 'rgba(34,197,94,.10)', expansion: 'rgba(79,70,229,.10)',
+  slowdown: 'rgba(217,119,6,.13)', contraction: 'rgba(220,38,38,.10)',
+};
+let _cycleChart = null;
+
+async function loadCycle(){
+  let d;
+  try { d = await (await fetch('/api/cycle')).json(); }
+  catch (e) { document.getElementById('cycle-current').innerHTML = '<div class="placeholder">불러오지 못했습니다.</div>'; return; }
+  const cur = d.current;
+  const curEl = document.getElementById('cycle-current');
+  if (cur.ready) {
+    curEl.innerHTML = `<div class="row" style="gap:12px">
+      <span class="tb-label">현재 국면(추정)</span>
+      <span class="sig-pill" style="background:var(--accent)">${esc(cur.phase_name)}</span>
+      <span class="tb-detail">${cur.reasons.map(esc).join(' · ')}</span></div>`;
+  } else {
+    curEl.innerHTML = '<div class="placeholder" style="padding:8px 0">현재 국면 추정에 필요한 거시(FRED) 데이터가 없습니다 — /api/refresh 후 표시됩니다.</div>';
+  }
+  drawCycleChart(d.phases, cur);
+  document.getElementById('cycle-phases').innerHTML = d.phases.map(p => {
+    const isCur = cur.ready && cur.phase_key === p.key;
+    const chips = p.lead_sectors.map(s => s.vc_key
+      ? `<span class="sector-chip link" onclick="gotoValuechain('${s.vc_key}')">${esc(s.name)}</span>`
+      : `<span class="sector-chip">${esc(s.name)}</span>`).join('');
+    return `<div class="phase-card${isCur ? ' current' : ''}">
+      <h4>${p.order}. ${esc(p.name)}${isCur ? ' <span style="color:var(--accent);font-size:11px">● 현재</span>' : ''}</h4>
+      <div class="phase-meta">금리 · ${esc(p.rate)}<br>물가 · ${esc(p.inflation)}<br>${esc(p.desc)}</div>
+      <div>${chips}</div></div>`;
+  }).join('');
+}
+
+function drawCycleChart(phases, cur){
+  const holder = document.getElementById('cycle-chart');
+  if (!_cycleChart) _cycleChart = echarts.init(holder);
+  const pts = [];
+  for (let i = 0; i <= 60; i++) { const x = i / 60; pts.push([x, -Math.cos(2 * Math.PI * x)]); }
+  const areas = phases.map((p, i) => [
+    { xAxis: i * 0.25, itemStyle: { color: _PHASE_AREA[p.key] },
+      label: { show: true, position: 'insideTop', color: '#64748b', fontSize: 12, fontWeight: 600, formatter: p.name } },
+    { xAxis: (i + 1) * 0.25 },
+  ]);
+  const series = [{
+    type: 'line', data: pts, smooth: true, showSymbol: false, lineStyle: { width: 3, color: '#4f46e5' },
+    markArea: { silent: true, data: areas },
+    markPoint: cur.ready ? {
+      symbol: 'pin', symbolSize: 58, itemStyle: { color: '#4f46e5' },
+      label: { color: '#fff', fontSize: 11, fontWeight: 700, formatter: cur.phase_name },
+      data: [{ coord: [cur.x, -Math.cos(2 * Math.PI * cur.x)] }],
+    } : undefined,
+  }];
+  _cycleChart.setOption({
+    animation: false, grid: { left: 16, right: 16, top: 30, bottom: 16 },
+    xAxis: { type: 'value', min: 0, max: 1, axisLabel: { show: false }, axisTick: { show: false },
+      axisLine: { show: false }, splitLine: { show: false } },
+    yAxis: { show: false, min: -1.5, max: 1.5 },
+    series,
+  }, true);
+  _cycleChart.resize();
+}
+
+// ===== 밸류체인 =====
+async function loadValuechain(){
+  if (!_vcData) {
+    try { _vcData = (await (await fetch('/api/valuechain')).json()).sectors; }
+    catch (e) { document.getElementById('vc-detail').innerHTML = '<div class="placeholder">불러오지 못했습니다.</div>'; return; }
+  }
+  document.getElementById('vc-sectors').innerHTML = _vcData.map(s =>
+    `<button data-k="${s.key}" onclick="selectVcSector('${s.key}')">${esc(s.name)}</button>`).join('');
+  selectVcSector(_vcCurrent || _vcData[0].key);
+}
+
+let _vcChart = null;
+function selectVcSector(key){
+  _vcCurrent = key;
+  document.querySelectorAll('#vc-sectors button').forEach(b => b.classList.toggle('on', b.dataset.k === key));
+  const s = _vcData.find(x => x.key === key);
+  if (!s) return;
+  document.getElementById('vc-detail').innerHTML =
+    `<p class="page-desc" style="margin:0 0 8px"><b>${esc(s.name)}</b>${s.gics ? ` <span class="sector-chip">${esc(s.gics)}</span>` : ''} · ${esc(s.summary)}</p>
+     <div id="vc-diagram" style="width:100%"></div>
+     <div style="font-size:11px;color:var(--dim);margin-top:6px">
+       <span style="color:var(--sig-buy);font-weight:700">● 국내(코스피)</span> 클릭 시 시그널 이동 ·
+       <span style="color:var(--sig-neutral);font-weight:700">● 해외</span> · 왼쪽 업스트림 → 오른쪽 다운스트림</div>`;
+  drawVcDiagram(s);
+}
+
+function drawVcDiagram(s){
+  const holder = document.getElementById('vc-diagram');
+  const leaves = s.stages.reduce((a, st) => a + st.domestic.length + st.overseas.length, 0);
+  holder.style.height = Math.min(880, Math.max(340, leaves * 27)) + 'px';
+  if (_vcChart) _vcChart.dispose();
+  _vcChart = echarts.init(holder);
+  const isKr = (c) => c.ticker && /^\d{6}$/.test(c.ticker);
+  const co = (c) => ({
+    name: c.name, _ticker: isKr(c) ? c.ticker : null,
+    symbolSize: 9, itemStyle: { color: isKr(c) ? '#16a34a' : '#94a3b8' },
+    label: { color: '#1e293b', fontSize: 11 },
+    tooltip: { formatter: `${esc(c.name)}${c.ticker ? ' · ' + esc(c.ticker) : ''}${isKr(c) ? ' · 클릭하면 시그널' : ''}` },
+  });
+  const root = {
+    name: s.name, symbolSize: 20, itemStyle: { color: '#4f46e5' },
+    label: { color: '#4f46e5', fontWeight: 700, fontSize: 13 },
+    children: s.stages.map(st => ({
+      name: st.stage.replace(' · ', '\n'), symbolSize: 15, itemStyle: { color: '#334155' },
+      label: { color: '#334155', fontWeight: 600, fontSize: 11 },
+      children: [...st.domestic.map(co), ...st.overseas.map(co)],
+    })),
+  };
+  _vcChart.setOption({
+    tooltip: { trigger: 'item' },
+    series: [{
+      type: 'tree', data: [root], top: 12, bottom: 12, left: '14%', right: '18%',
+      orient: 'LR', edgeShape: 'curve', symbol: 'circle', expandAndCollapse: false,
+      label: { position: 'left', align: 'right', fontSize: 11 },
+      leaves: { label: { position: 'right', align: 'left' } },
+      lineStyle: { color: '#cbd5e1', width: 1.2, curveness: 0.5 },
+      initialTreeDepth: -1, animationDuration: 450,
+    }],
+  }, true);
+  _vcChart.off('click');
+  _vcChart.on('click', (p) => { if (p.data && p.data._ticker) gotoSignal(p.data._ticker); });
+  _vcChart.resize();
+}
 
 async function loadRegime(){
   const pill = document.getElementById('regime-pill');
@@ -418,23 +570,24 @@ async function loadRegime(){
 }
 
 // 거시 시황(FRED): 지표별 favor(+1 우호/-1 비우호)로 화살표 색을 정직하게 칠한다.
+const _PCT_CHG = new Set(['NASDAQCOM', 'VIXCLS', 'DEXKOUS']);  // % 등락(그 외 금리·CPI는 %p)
 async function loadMacro(){
-  const group = document.getElementById('macro-group');
   const sep = document.getElementById('macro-sep');
-  const hide = () => { group.style.display = 'none'; sep.style.display = 'none'; };
+  const bias = document.getElementById('macro-bias');
+  const chips = document.getElementById('macro-chips');
+  const hide = () => { sep.style.display = 'none'; bias.style.display = 'none'; chips.innerHTML = ''; };
   try {
     const d = await (await fetch('/api/macro')).json();
     if (!d.ready || !d.indicators.length) { hide(); return; }
-    group.style.display = ''; sep.style.display = '';
-    const bias = document.getElementById('macro-bias');
+    sep.style.display = ''; bias.style.display = '';
     bias.textContent = '거시 ' + (d.bias || '-');
     bias.className = 'sig-pill ' + (d.bias === '우호' ? 'BUY' : d.bias === '비우호' ? 'SELL' : 'HOLD');
-    document.getElementById('macro-chips').innerHTML = d.indicators.map(m => {
+    chips.innerHTML = d.indicators.map(m => {
       const isPct = m.unit === '%' || m.unit === '% YoY';
-      const val = m.key === 'NASDAQCOM' ? Math.round(m.value).toLocaleString()
+      const val = m.key === 'DEXKOUS' ? Math.round(m.value).toLocaleString() + '원'
+                : m.key === 'NASDAQCOM' ? Math.round(m.value).toLocaleString()
                 : fmtNum(m.value, 2) + (isPct ? '%' : '');
-      // 지수(나스닥/VIX)는 % 등락, 금리·CPI는 %p 변화
-      const chgUnit = (m.key === 'NASDAQCOM' || m.key === 'VIXCLS') ? '%' : '%p';
+      const chgUnit = _PCT_CHG.has(m.key) ? '%' : '%p';
       const arrow = m.dir > 0 ? '▲' : m.dir < 0 ? '▼' : '–';
       const favorCls = m.favor > 0 ? 'mc-good' : m.favor < 0 ? 'mc-bad' : 'mc-flat';  // 우호=초록, 비우호=빨강
       const chg = m.change == null ? '' :
@@ -446,33 +599,41 @@ async function loadMacro(){
   } catch (e) { hide(); }
 }
 
-let _signalItems = {};
+let _signalItems = {}, _favorites = new Set();
 
 async function loadSignals(){
   const el = document.getElementById('signal-body');
   el.textContent = '불러오는 중…';
   try {
-    const d = await (await fetch('/api/signals')).json();
+    const [d, fav] = await Promise.all([
+      (await fetch('/api/signals')).json(),
+      (await fetch('/api/favorites')).json(),
+    ]);
+    _favorites = new Set((fav.favorites || []).filter(f => f.kind === 'ticker').map(f => f.key));
     if (!d.ready) { el.textContent = d.message || '아직 수집된 데이터가 없습니다 — /api/refresh를 먼저 호출하세요.'; return; }
     if (!d.items.length) { el.textContent = '시그널 데이터가 없습니다.'; return; }
     _signalItems = Object.fromEntries(d.items.map(r => [r.ticker, r]));
-    const rows = d.items.map((r, i) => `<tr class="clickable-row" data-ticker="${esc(r.ticker)}">
-      <td>${i + 1}</td>
+    const star = (t) => `<span class="fav-star${_favorites.has(t) ? ' on' : ''}" data-fav="${esc(t)}" title="관심종목">${_favorites.has(t) ? '★' : '☆'}</span>`;
+    const rows = d.items.map(r => `<tr class="clickable-row" data-ticker="${esc(r.ticker)}">
+      <td>${star(r.ticker)}</td>
       <td>${esc(r.name)}<div style="color:var(--dim);font-size:11px">${esc(r.ticker)}</div></td>
+      <td style="font-size:12px;color:var(--dim)">${r.sector ? esc(r.sector) : '–'}</td>
       <td><span class="sig-pill ${r.kind}">${r.kind}</span></td>
-      <td class="num">${r.score > 0 ? '+' : ''}${fmtNum(r.score, 2)}</td>
-      <td class="num">${fmtNum(r.confidence, 2)}</td>
-      <td class="reasons">${r.reasons.slice(0, 2).map(esc).join(' · ')}</td>
     </tr>`).join('');
     el.className = '';
     el.innerHTML = `<table class="dtable"><thead><tr>
-      <th>#</th><th>종목</th><th>시그널</th><th class="num">점수</th>
-      <th class="num">신뢰도</th><th>근거</th>
+      <th></th><th>종목</th><th>섹터</th><th>시그널</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
     el.querySelectorAll('tr.clickable-row').forEach(tr => {
       tr.addEventListener('click', () => selectSignalRow(tr.dataset.ticker));
     });
-    selectSignalRow(d.items[0].ticker);  // 기본 선택: 1위 종목
+    el.querySelectorAll('.fav-star').forEach(s => {
+      s.addEventListener('click', (ev) => { ev.stopPropagation(); toggleFav(s.dataset.fav, s); });
+    });
+    // 밸류체인에서 넘어온 종목이 유니버스에 있으면 그걸, 없으면 1위 종목 선택
+    const target = (_pendingSignalTicker && _signalItems[_pendingSignalTicker]) ? _pendingSignalTicker : d.items[0].ticker;
+    _pendingSignalTicker = null;
+    selectSignalRow(target);
   } catch (e) {
     el.textContent = '불러오지 못했습니다.';
   }
@@ -490,26 +651,56 @@ const _ZONE_COLOR = { BUY: '#22c55e', SELL: '#dc2626' };
 
 let _signalChart = null;
 async function showSignalChart(ticker, item){
-  document.getElementById('signal-chart-title').textContent = item ? `${item.name} (${ticker})` : ticker;
+  // 드릴다운 헤더: 종목명(섹터)+시그널 점수 → 기업 소개(정적) → 시그널 해설
+  document.getElementById('signal-chart-title').textContent = item ? item.name : ticker;
+  const sub = document.getElementById('signal-chart-sub');
+  if (item) {
+    sub.innerHTML = `<span style="color:var(--dim)">${esc(ticker)}${item.sector ? ' · ' + esc(item.sector) : ''}</span>`
+      + ` &nbsp;<span class="sig-pill ${item.kind}">${item.kind}</span>`
+      + ` <span style="color:var(--dim)">점수 ${item.score > 0 ? '+' : ''}${fmtNum(item.score, 2)} · 신뢰도 ${fmtNum(item.confidence, 2)}</span>`;
+  } else sub.textContent = '';
+  const introEl = document.getElementById('signal-intro');
+  if (item && item.intro) {
+    introEl.style.display = '';
+    introEl.innerHTML = `🏭 <b style="color:var(--txt)">${esc(item.intro)}</b>${item.intro_desc ? ' — ' + esc(item.intro_desc) : ''}`;
+  } else introEl.style.display = 'none';
   const narrEl = document.getElementById('signal-narrative');
-  if (item && item.narrative) {
-    narrEl.style.display = '';
-    narrEl.innerHTML = `<span class="sig-pill ${item.kind}">${item.kind}</span> &nbsp;${esc(item.narrative)}`;
-  } else {
-    narrEl.style.display = 'none';
-  }
+  if (item && item.narrative) { narrEl.style.display = ''; narrEl.textContent = item.narrative; }
+  else narrEl.style.display = 'none';
   const holder = document.getElementById('signal-chart');
   try {
     const d = await (await fetch(`/api/signals/${encodeURIComponent(ticker)}/chart`)).json();
     if (!d.ready) { holder.innerHTML = ''; holder.textContent = '차트 데이터가 없습니다.'; return; }
     if (!_signalChart) _signalChart = echarts.init(holder);
-    const markArea = (d.zones || []).length ? {
-      itemStyle: { opacity: 0.10 },
-      data: d.zones.map(z => [
+    // 기간: 최대 1년(거래일 ~252)까지만 보여주고, 기본 확대 구간은 최근 1개월(~21거래일)
+    const CAP = 252, N = d.dates.length, s0 = Math.max(0, N - CAP);
+    const dates = d.dates.slice(s0), close = d.close.slice(s0),
+          ma20 = d.ma20.slice(s0), ma60 = d.ma60.slice(s0), ma120 = d.ma120.slice(s0),
+          rsi = d.rsi.slice(s0), macd = d.macd.slice(s0),
+          macdSig = d.macd_signal.slice(s0), macdHist = d.macd_hist.slice(s0);
+    const first = dates[0];
+    const rawZones = (d.zones || []).filter(z => z.end >= first);
+    const zones = rawZones.map(z => ({ kind: z.kind, start: z.start < first ? first : z.start, end: z.end }));
+    const vis = Math.min(dates.length, 63);  // 기본 확대 = 최근 3개월(거래일 ~63)
+    const zoomStart = Math.max(0, (1 - vis / dates.length) * 100);
+    const markArea = zones.length ? {
+      itemStyle: { opacity: 0.08 },
+      data: zones.map(z => [
         { xAxis: z.start, itemStyle: { color: _ZONE_COLOR[z.kind] } },
         { xAxis: z.end },
       ]),
     } : undefined;
+    // 시그널 발생 '지점' 마커 — 구간 시작점이 곧 시그널 전환점(매수 ▲ / 매도 ▼)
+    const idxOf = {}; dates.forEach((dt, i) => { idxOf[dt] = i; });
+    const markPoint = rawZones.length ? { data: rawZones.map(z => {
+      const i = idxOf[z.start < first ? first : z.start]; if (i == null) return null;
+      return z.kind === 'BUY'
+        ? { coord: [dates[i], close[i]], symbol: 'triangle', symbolSize: 12, symbolOffset: [0, 16],
+            itemStyle: { color: '#16a34a' }, label: { show: true, position: 'bottom', formatter: '매수', color: '#16a34a', fontSize: 10, fontWeight: 700 } }
+        : { coord: [dates[i], close[i]], symbol: 'triangle', symbolRotate: 180, symbolSize: 12, symbolOffset: [0, -16],
+            itemStyle: { color: '#dc2626' }, label: { show: true, position: 'top', formatter: '매도', color: '#dc2626', fontSize: 10, fontWeight: 700 } };
+    }).filter(Boolean) } : undefined;
+    document.getElementById('signal-legend').style.display = '';
     _signalChart.setOption({
       animation: false,
       tooltip: { trigger: 'axis' },
@@ -525,9 +716,9 @@ async function showSignalChart(ticker, item){
         { left: 55, right: 20, top: '72%', height: '13%' },
       ],
       xAxis: [
-        { type: 'category', data: d.dates, gridIndex: 0, axisLabel: { show: false } },
-        { type: 'category', data: d.dates, gridIndex: 1, axisLabel: { show: false } },
-        { type: 'category', data: d.dates, gridIndex: 2, axisLabel: { show: false } },
+        { type: 'category', data: dates, gridIndex: 0, axisLabel: { show: false } },
+        { type: 'category', data: dates, gridIndex: 1, axisLabel: { show: false } },
+        { type: 'category', data: dates, gridIndex: 2, axisLabel: { show: false } },
       ],
       yAxis: [
         { gridIndex: 0, scale: true },
@@ -535,19 +726,19 @@ async function showSignalChart(ticker, item){
         { gridIndex: 2, scale: true },
       ],
       dataZoom: [
-        { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 4, height: 20 },
-        { type: 'inside', xAxisIndex: [0, 1, 2] },
+        { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 4, height: 20, start: zoomStart, end: 100 },
+        { type: 'inside', xAxisIndex: [0, 1, 2], start: zoomStart, end: 100 },
       ],
       series: [
-        { name: '종가', type: 'line', data: d.close, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false,
-          lineStyle: { width: 2, color: '#4f46e5' }, markArea },
-        { name: 'MA20', type: 'line', data: d.ma20, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
-        { name: 'MA60', type: 'line', data: d.ma60, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
-        { name: 'MA120', type: 'line', data: d.ma120, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
-        { name: 'RSI', type: 'line', data: d.rsi, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#d97706' } },
-        { name: 'MACD 히스토그램', type: 'bar', data: d.macd_hist, xAxisIndex: 2, yAxisIndex: 2 },
-        { name: 'MACD', type: 'line', data: d.macd, xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, lineStyle: { width: 1 } },
-        { name: 'Signal', type: 'line', data: d.macd_signal, xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, lineStyle: { width: 1 } },
+        { name: '종가', type: 'line', data: close, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false,
+          lineStyle: { width: 2, color: '#4f46e5' }, markArea, markPoint },
+        { name: 'MA20', type: 'line', data: ma20, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
+        { name: 'MA60', type: 'line', data: ma60, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
+        { name: 'MA120', type: 'line', data: ma120, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
+        { name: 'RSI', type: 'line', data: rsi, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#d97706' } },
+        { name: 'MACD 히스토그램', type: 'bar', data: macdHist, xAxisIndex: 2, yAxisIndex: 2 },
+        { name: 'MACD', type: 'line', data: macd, xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, lineStyle: { width: 1 } },
+        { name: 'Signal', type: 'line', data: macdSig, xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, lineStyle: { width: 1 } },
       ],
     }, true);
     _signalChart.resize();
@@ -588,8 +779,8 @@ const _REASON_LABEL = { STOP_LOSS: '손절', TAKE_PROFIT: '익절', TRAILING: '�
 async function loadBotState(){
   try {
     const d = await (await fetch('/api/bot/state')).json();
-    document.getElementById('bot-cash').textContent = d.cash == null ? '-' : Math.round(d.cash).toLocaleString() + '원';
-    document.getElementById('bot-total').textContent = d.total_eval == null ? '-' : Math.round(d.total_eval).toLocaleString() + '원';
+    document.getElementById('bot-cash').textContent = fmtKRW(d.cash);
+    document.getElementById('bot-total').textContent = fmtKRW(d.total_eval);
     document.getElementById('bot-count').textContent = d.positions.length;
 
     const investedCost = d.positions.reduce((s, p) => s + p.qty * p.avg_price, 0);
@@ -605,7 +796,11 @@ async function loadBotState(){
 
     document.getElementById('bot-status-label').textContent = d.enabled ? '실행 중' : '꺼짐';
     document.getElementById('bot-toggle-btn').textContent = d.enabled ? '끄기' : '켜기';
-    document.getElementById('bot-kis-status').textContent = d.kis_connected ? 'KIS 연결됨' : 'KIS 연결 안 됨(.env 확인)';
+    document.getElementById('bot-kis-status').textContent = d.kis_connected ? 'KIS 모의계좌 연결됨' : 'KIS 연결 안 됨(.env 확인)';
+    const cfg = d.config || {};
+    document.getElementById('bot-rules').innerHTML =
+      `매매 규칙 · 실주문은 <b>평일 09:00~15:20</b>만 · 매수 <b>종합점수 ≥ ${cfg.min_buy_score}</b> · `
+      + `한 사이클 최대 <b>${cfg.max_new_buys_per_run}건</b> · 최대 <b>${cfg.max_positions}종목</b> · 종목당 <b>${Math.round((cfg.position_pct || 0) * 100)}%</b> 동일가중 · 청산 손절 -7%/익절 +15%/트레일링 -5%`;
 
     const hEl = document.getElementById('bot-holdings-body');
     if (!d.positions.length) {
@@ -633,10 +828,13 @@ async function loadBotState(){
         <td>${esc(t.name)}</td>
         <td><span class="sig-pill ${t.side === 'buy' ? 'BUY' : 'SELL'}">${t.side === 'buy' ? '매수' : '매도'}</span></td>
         <td class="num">${t.qty}</td><td class="num">${fmtNum(t.price, 0)}</td>
-        <td>${_REASON_LABEL[t.reason] || t.reason}</td>
+        <td class="reasons">
+          <span style="font-weight:600">${_REASON_LABEL[t.reason] || esc(t.reason)}</span>${t.score != null ? ` <span style="color:var(--dim)">· 점수 ${t.score > 0 ? '+' : ''}${fmtNum(t.score, 2)}</span>` : ''}
+          ${t.note ? `<div style="color:var(--dim);font-size:11px;margin-top:2px">${esc(t.note)}</div>` : ''}
+        </td>
       </tr>`).join('');
       tEl.innerHTML = `<table class="dtable"><thead><tr>
-        <th>시각</th><th>종목</th><th>구분</th><th class="num">수량</th><th class="num">가격</th><th>사유</th>
+        <th>시각</th><th>종목</th><th>구분</th><th class="num">수량</th><th class="num">가격</th><th>근거(타이밍·수량)</th>
       </tr></thead><tbody>${rows}</tbody></table>`;
     }
 
@@ -662,15 +860,32 @@ async function toggleBot(){
   loadBotState();
 }
 
+function renderBotPlan(d, isPreview){
+  const el = document.getElementById('bot-plan');
+  el.style.display = '';
+  if (!d.ok) { el.innerHTML = `<b>${isPreview ? '미리보기' : '실행'} 안 됨</b> — ${esc(d.reason || '')}`; return; }
+  const line = (arr) => arr.length ? arr.map(x =>
+    `· <b>${esc(x.name || x.ticker)}</b> ${x.qty}주 — ${esc(x.note || (_REASON_LABEL[x.reason] || x.reason))}`).join('<br>') : '없음';
+  el.innerHTML = `<b>${isPreview ? '📋 판단 미리보기 (실주문 없음)' : '✅ 실행 결과'}</b><br>`
+    + `<b style="color:var(--sig-buy)">매수</b> (${d.buys.length}건${d.skipped_weak_buys ? `, 약한 BUY ${d.skipped_weak_buys}건 제외` : ''})<br>${line(d.buys)}<br>`
+    + `<b style="color:var(--sig-sell)">매도</b> (${d.sells.length}건)<br>${line(d.sells)}`;
+}
+
 async function runBotNow(){
-  const btn = event.target; btn.disabled = true; btn.textContent = '실행 중…';
+  const btn = event.target; btn.disabled = true; const t = btn.textContent; btn.textContent = '실행 중…';
   try {
     const d = await (await fetch('/api/bot/run', { method: 'POST' })).json();
-    alert(d.ok ? `실행 완료 — 매수 ${d.buys.length}건, 매도 ${d.sells.length}건` : `실행 안 됨: ${d.reason}`);
+    renderBotPlan(d, false);
     loadBotState();
-  } finally {
-    btn.disabled = false; btn.textContent = '지금 실행(테스트)';
-  }
+  } finally { btn.disabled = false; btn.textContent = t; }
+}
+
+async function previewBot(){
+  const btn = event.target; btn.disabled = true; const t = btn.textContent; btn.textContent = '계산 중…';
+  try {
+    const d = await (await fetch('/api/bot/preview', { method: 'POST' })).json();
+    renderBotPlan(d, true);
+  } finally { btn.disabled = false; btn.textContent = t; }
 }
 
 // ===== 인증 게이트 =====
@@ -736,40 +951,25 @@ function saveProfile(){
   fetch('/api/profile', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(_profile)});
 }
 
-// ===== 워치리스트 =====
-async function loadWatchlist(){
-  const ul = document.getElementById('watchlist-body');
-  ul.innerHTML = '불러오는 중…';
-  const d = await (await fetch('/api/favorites')).json();
-  const items = (d.favorites || []).filter(f => f.kind === 'ticker');
-  ul.innerHTML = items.length ? items.map(f =>
-    `<li><span>${f.key}${f.label ? ' · ' + f.label : ''}</span><button onclick="removeWatch('${f.key}')">삭제</button></li>`
-  ).join('') : '<li style="border:none;color:var(--dim)">관심 종목이 없습니다.</li>';
-}
-async function addWatch(){
-  const key = document.getElementById('wl_ticker').value.trim();
-  const label = document.getElementById('wl_label').value.trim();
-  if (!key) return;
-  await fetch('/api/favorites', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({kind: 'ticker', key, label})});
-  document.getElementById('wl_ticker').value = ''; document.getElementById('wl_label').value = '';
-  loadWatchlist();
-}
-async function removeWatch(key){
-  await fetch('/api/favorites?kind=ticker&key=' + encodeURIComponent(key), {method: 'DELETE'});
-  loadWatchlist();
-}
-
-// ===== AI 리포트 =====
-async function requestAiReport(){
-  const el = document.getElementById('report-body');
-  el.textContent = '생성 중…';
-  const d = await (await fetch('/api/report/ai', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})).json();
-  el.textContent = d.available ? d.report : (d.message || '아직 준비 중인 기능입니다.');
+// ===== 관심종목(⭐, 시그널 리스트에서 토글) =====
+async function toggleFav(ticker, el){
+  const on = _favorites.has(ticker);
+  if (on) {
+    await fetch('/api/favorites?kind=ticker&key=' + encodeURIComponent(ticker), {method: 'DELETE'});
+    _favorites.delete(ticker);
+  } else {
+    await fetch('/api/favorites', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({kind: 'ticker', key: ticker, label: ''})});
+    _favorites.add(ticker);
+  }
+  el.classList.toggle('on', !on);
+  el.textContent = on ? '☆' : '★';
 }
 
 // ===== 부팅 =====
 async function startApp(needOnboard){
   applyProfileHeader();
+  loadRegime(); loadMacro();  // 시황 리본은 전역 노출 — 어느 탭에서도 보이게 시작 시 로드
   if (needOnboard) {
     document.getElementById('onbDlg').showModal();
   } else {

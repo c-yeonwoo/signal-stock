@@ -17,6 +17,7 @@ from fastapi import Body, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from signal_desk import auth, bot, config, db, store
+from signal_desk.reference import cycle, valuechain
 from signal_desk.signals import macro, regime, valuation
 from signal_desk.signals.engine import backtest_summary, compute_indicator_series, evaluate, signal_zones
 
@@ -169,7 +170,15 @@ def _macro():
 def signals_get():
     if not store.is_ready():
         return {"ready": False, "items": [], "message": "아직 수집된 데이터가 없습니다. /api/refresh를 먼저 호출하세요."}
-    return {"ready": True, "items": [asdict(r) for r in _signals()]}
+    items = []
+    for r in _signals():
+        d = asdict(r)
+        pos = valuechain.company_position(r.ticker)  # 밸류체인 큐레이션에서 섹터·소개 재활용
+        d["sector"] = pos["gics"] if pos else None  # 시그널 리스트 컬럼은 GICS 섹터
+        d["intro"] = f"{pos['sector']} 밸류체인 · {pos['stage']}" if pos else None
+        d["intro_desc"] = pos["stage_desc"] if pos else None
+        items.append(d)
+    return {"ready": True, "items": items}
 
 
 @app.get("/api/backtest")
@@ -256,15 +265,32 @@ def bot_toggle(data: dict = Body(...)):
 
 @app.post("/api/bot/run")
 def bot_run():
-    """수동 1회 실행 — 장 시간 무관(force=True), 테스트/데모용."""
-    return bot.run_once(force=True)
+    """수동 1회 실행 — 실주문은 장 시간(평일 09:00~15:20 KST)에만 나간다."""
+    return bot.run_once(dry_run=False)
 
 
-# ---------- 탭 스텁 (다음 단계에서 실데이터로 교체) ----------
-@app.get("/api/candidates/all")
-def candidates_stub():
-    """TODO(phase4): 통합 후보 뷰(눌림목·낙폭과대·IPO·실적서프라이즈·턴어라운드) + 기회도."""
-    return {"ready": False, "items": []}
+@app.post("/api/bot/preview")
+def bot_preview():
+    """판단 미리보기(dry-run) — 주문 없이 '지금 무엇을 왜 매매할지' 계획만 계산. 장 시간 무관."""
+    return bot.run_once(dry_run=True)
+
+
+# ---------- 사이클 / 밸류체인 (큐레이션 + FRED 현재위치) ----------
+@app.get("/api/cycle")
+def cycle_get():
+    """경기 사이클 4국면 + 국면별 주도섹터, 현재 위치(FRED 거시로 근사 추정).
+    각 주도섹터에 밸류체인 섹터 key(vc_key)를 달아 밸류체인 탭과 연결한다."""
+    phases = []
+    for p in cycle.phases():
+        leads = [{"name": s, "vc_key": valuechain.key_for_tag(s)} for s in p["lead_sectors"]]
+        phases.append({**p, "lead_sectors": leads})
+    return {"phases": phases, "current": cycle.position(_macro()["indicators"])}
+
+
+@app.get("/api/valuechain")
+def valuechain_get():
+    """섹터별 밸류체인(업→다운스트림) 대표기업 큐레이션. 국내는 티커로 시그널 연결 가능."""
+    return {"sectors": valuechain.sectors()}
 
 
 @app.get("/api/macro")
@@ -275,12 +301,6 @@ def macro_get():
     if not data["indicators"]:
         return {"ready": False, "indicators": []}
     return {"ready": True, **data}
-
-
-@app.post("/api/report/ai")
-def report_ai_stub(request: Request, data: dict = Body(...)):
-    """TODO(phase6): 프로필+워치리스트 기반 AI 리포트."""
-    return {"available": False, "message": "준비 중"}
 
 
 # ---------- SPA 서빙 ----------
