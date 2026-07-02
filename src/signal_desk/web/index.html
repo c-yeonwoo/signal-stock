@@ -270,9 +270,13 @@
           <span class="stat-label" style="margin:0">봇 상태:</span>
           <span id="bot-status-label" style="font-weight:700">-</span>
           <button class="btn primary" id="bot-toggle-btn" onclick="toggleBot()">켜기</button>
-          <button class="btn" onclick="runBotNow()">지금 실행(테스트)</button>
+          <button class="btn" onclick="runBotNow()">지금 실행</button>
+          <button class="btn" onclick="previewBot()">판단 미리보기</button>
           <span class="stat-label" id="bot-kis-status" style="margin-left:auto"></span>
         </div>
+        <div class="stat-label" id="bot-rules" style="margin:10px 0 0"></div>
+        <div id="bot-plan" style="display:none;margin-top:10px;font-size:12px;background:var(--accent-weak);
+          border-radius:var(--r-md);padding:10px 12px;line-height:1.6"></div>
       </div>
       <div class="split">
         <div class="card">
@@ -753,7 +757,11 @@ async function loadBotState(){
 
     document.getElementById('bot-status-label').textContent = d.enabled ? '실행 중' : '꺼짐';
     document.getElementById('bot-toggle-btn').textContent = d.enabled ? '끄기' : '켜기';
-    document.getElementById('bot-kis-status').textContent = d.kis_connected ? 'KIS 연결됨' : 'KIS 연결 안 됨(.env 확인)';
+    document.getElementById('bot-kis-status').textContent = d.kis_connected ? 'KIS 모의계좌 연결됨' : 'KIS 연결 안 됨(.env 확인)';
+    const cfg = d.config || {};
+    document.getElementById('bot-rules').innerHTML =
+      `매매 규칙 · 실주문은 <b>평일 09:00~15:20</b>만 · 매수 <b>종합점수 ≥ ${cfg.min_buy_score}</b> · `
+      + `한 사이클 최대 <b>${cfg.max_new_buys_per_run}건</b> · 최대 <b>${cfg.max_positions}종목</b> · 종목당 <b>${Math.round((cfg.position_pct || 0) * 100)}%</b> 동일가중 · 청산 손절 -7%/익절 +15%/트레일링 -5%`;
 
     const hEl = document.getElementById('bot-holdings-body');
     if (!d.positions.length) {
@@ -813,15 +821,32 @@ async function toggleBot(){
   loadBotState();
 }
 
+function renderBotPlan(d, isPreview){
+  const el = document.getElementById('bot-plan');
+  el.style.display = '';
+  if (!d.ok) { el.innerHTML = `<b>${isPreview ? '미리보기' : '실행'} 안 됨</b> — ${esc(d.reason || '')}`; return; }
+  const line = (arr) => arr.length ? arr.map(x =>
+    `· <b>${esc(x.name || x.ticker)}</b> ${x.qty}주 — ${esc(x.note || (_REASON_LABEL[x.reason] || x.reason))}`).join('<br>') : '없음';
+  el.innerHTML = `<b>${isPreview ? '📋 판단 미리보기 (실주문 없음)' : '✅ 실행 결과'}</b><br>`
+    + `<b style="color:var(--sig-buy)">매수</b> (${d.buys.length}건${d.skipped_weak_buys ? `, 약한 BUY ${d.skipped_weak_buys}건 제외` : ''})<br>${line(d.buys)}<br>`
+    + `<b style="color:var(--sig-sell)">매도</b> (${d.sells.length}건)<br>${line(d.sells)}`;
+}
+
 async function runBotNow(){
-  const btn = event.target; btn.disabled = true; btn.textContent = '실행 중…';
+  const btn = event.target; btn.disabled = true; const t = btn.textContent; btn.textContent = '실행 중…';
   try {
     const d = await (await fetch('/api/bot/run', { method: 'POST' })).json();
-    alert(d.ok ? `실행 완료 — 매수 ${d.buys.length}건, 매도 ${d.sells.length}건` : `실행 안 됨: ${d.reason}`);
+    renderBotPlan(d, false);
     loadBotState();
-  } finally {
-    btn.disabled = false; btn.textContent = '지금 실행(테스트)';
-  }
+  } finally { btn.disabled = false; btn.textContent = t; }
+}
+
+async function previewBot(){
+  const btn = event.target; btn.disabled = true; const t = btn.textContent; btn.textContent = '계산 중…';
+  try {
+    const d = await (await fetch('/api/bot/preview', { method: 'POST' })).json();
+    renderBotPlan(d, true);
+  } finally { btn.disabled = false; btn.textContent = t; }
 }
 
 // ===== 인증 게이트 =====

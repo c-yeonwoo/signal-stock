@@ -265,8 +265,14 @@ def bot_toggle(data: dict = Body(...)):
 
 @app.post("/api/bot/run")
 def bot_run():
-    """수동 1회 실행 — 장 시간 무관(force=True), 테스트/데모용."""
-    return bot.run_once(force=True)
+    """수동 1회 실행 — 실주문은 장 시간(평일 09:00~15:20 KST)에만 나간다."""
+    return bot.run_once(dry_run=False)
+
+
+@app.post("/api/bot/preview")
+def bot_preview():
+    """판단 미리보기(dry-run) — 주문 없이 '지금 무엇을 왜 매매할지' 계획만 계산. 장 시간 무관."""
+    return bot.run_once(dry_run=True)
 
 
 # ---------- 사이클 / 밸류체인 (큐레이션 + FRED 현재위치) ----------

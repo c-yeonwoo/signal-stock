@@ -41,12 +41,17 @@ def conn() -> sqlite3.Connection:
 
 def _migrate(c: sqlite3.Connection) -> None:
     """가벼운 ADD COLUMN 마이그레이션 — CREATE TABLE IF NOT EXISTS는 기존 테이블에 새 컬럼을
-    안 붙여줘서, 이미 만들어진 DB에도 신규 컬럼을 채워준다(bot_trades 근거 강화용)."""
-    cols = {r[1] for r in c.execute("PRAGMA table_info(bot_trades)").fetchall()}
-    if "score" not in cols:
+    안 붙여줘서, 이미 만들어진 DB에도 신규 컬럼을 채워준다."""
+    tcols = {r[1] for r in c.execute("PRAGMA table_info(bot_trades)").fetchall()}
+    if "score" not in tcols:
         c.execute("ALTER TABLE bot_trades ADD COLUMN score REAL")
-    if "note" not in cols:
+    if "note" not in tcols:
         c.execute("ALTER TABLE bot_trades ADD COLUMN note TEXT")
+    ccols = {r[1] for r in c.execute("PRAGMA table_info(bot_config)").fetchall()}
+    if "min_buy_score" not in ccols:  # 이 점수 이상인 BUY만 매수(약한 BUY는 제외)
+        c.execute("ALTER TABLE bot_config ADD COLUMN min_buy_score REAL NOT NULL DEFAULT 1.6")
+    if "max_new_buys_per_run" not in ccols:  # 한 사이클에 신규 매수 최대 건수(한꺼번에 다 사지 않음)
+        c.execute("ALTER TABLE bot_config ADD COLUMN max_new_buys_per_run INTEGER NOT NULL DEFAULT 2")
     c.commit()
 
 
@@ -161,9 +166,11 @@ def bot_config_get() -> dict:
     c.execute("INSERT OR IGNORE INTO bot_config(id,enabled,max_positions,position_pct,updated) "
               "VALUES(1,0,10,0.08,?)", (int(time.time()),))
     c.commit()
-    row = c.execute("SELECT enabled,max_positions,position_pct,updated FROM bot_config WHERE id=1").fetchone()
+    row = c.execute("SELECT enabled,max_positions,position_pct,updated,min_buy_score,max_new_buys_per_run "
+                    "FROM bot_config WHERE id=1").fetchone()
     c.close()
-    return {"enabled": bool(row[0]), "max_positions": row[1], "position_pct": row[2], "updated": row[3]}
+    return {"enabled": bool(row[0]), "max_positions": row[1], "position_pct": row[2], "updated": row[3],
+            "min_buy_score": row[4], "max_new_buys_per_run": row[5]}
 
 
 def bot_config_set_enabled(enabled: bool) -> None:
