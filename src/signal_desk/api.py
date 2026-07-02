@@ -17,7 +17,7 @@ from fastapi import Body, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from signal_desk import auth, bot, config, db, store
-from signal_desk.signals import regime, valuation
+from signal_desk.signals import macro, regime, valuation
 from signal_desk.signals.engine import backtest_summary, compute_indicator_series, evaluate, signal_zones
 
 config.load_env()
@@ -159,6 +159,12 @@ def _regime():
     return regime.classify(store.load_price_series())
 
 
+@lru_cache(maxsize=1)
+def _macro():
+    indicators = store.load_macro()
+    return {"indicators": indicators, **macro.read(indicators)}
+
+
 @app.get("/api/signals")
 def signals_get():
     if not store.is_ready():
@@ -205,11 +211,18 @@ def refresh():
     universe = store.fetch_universe()
     store.fetch_prices(universe)
     fundamentals = store.fetch_fundamentals(universe)
+    macro_items = store.fetch_macro()
     _signals.cache_clear()
     _backtest.cache_clear()
     _valuation.cache_clear()
     _regime.cache_clear()
-    return {"ok": True, "universe_size": len(universe), "fundamentals_size": len(fundamentals)}
+    _macro.cache_clear()
+    return {
+        "ok": True,
+        "universe_size": len(universe),
+        "fundamentals_size": len(fundamentals),
+        "macro_size": len(macro_items),
+    }
 
 
 @app.get("/api/valuation")
@@ -255,9 +268,13 @@ def candidates_stub():
 
 
 @app.get("/api/macro")
-def macro_stub():
-    """TODO(phase3): 매크로 미니차트(기준금리·환율·지수·거래대금)."""
-    return {"ready": False, "series": []}
+def macro_get():
+    """미 거시 시황(CPI·기준금리·10년물·나스닥·VIX) + 우호/비우호 요약 — FRED 기반.
+    signals/macro.py 참고. FRED_API_KEY 없으면 ready=False."""
+    data = _macro()
+    if not data["indicators"]:
+        return {"ready": False, "indicators": []}
+    return {"ready": True, **data}
 
 
 @app.post("/api/report/ai")

@@ -14,8 +14,9 @@
     --r-sm:8px; --r-md:12px; --r-lg:16px; --shadow:0 8px 24px rgba(2,32,71,.09);
   }
   * { box-sizing:border-box; }
+  html, body { height:100%; }
   body { margin:0; font:15px/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;
-         background:var(--bg); color:var(--txt); }
+         background:var(--bg); color:var(--txt); display:flex; flex-direction:column; min-height:100vh; }
   select, input[type=number], input[type=text], input[type=email], input[type=password], .ctrl {
     font-size:14px; padding:9px 12px; border:1px solid var(--line); border-radius:10px;
     background:#fff; color:var(--txt); outline:none; }
@@ -36,9 +37,12 @@
   .chip { padding:3px 9px; border:1px solid var(--line); border-radius:12px; cursor:pointer;
           background:var(--panel); color:var(--dim); font-size:11px; user-select:none; }
   .chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
-  main { max-width:1240px; margin:0 auto; padding:28px 18px 60px; }
-  /* 워크스페이스형 페이지(차트+리스트 등)는 main의 1240px 제한을 풀블리드로 벗어남 */
-  .bleed { width:96vw; max-width:1720px; margin-left:calc(50% - 48vw); }
+  /* 앱 셸: main이 남는 높이를 모두 차지하고 footer를 바닥으로 밀어냄(빈 화면 위로 뜨는 문제 해결) */
+  main { flex:1 0 auto; width:100%; }
+  /* 문서형 탭(표·카드 위주) — 편안한 폭으로 가운데 정렬 */
+  .view-doc { max-width:1360px; margin:0 auto; padding:24px clamp(16px,3.5vw,44px) 48px; }
+  /* 워크스페이스형 탭(시그널·포트폴리오) — 뷰포트 폭을 시원하게 사용 */
+  .view-app { padding:16px clamp(14px,2.5vw,34px) 20px; }
   .split { display:flex; gap:16px; align-items:flex-start; }
   .split > .card { flex:1 1 50%; min-width:0; }
   .card-row { display:flex; gap:16px; margin-bottom:16px; }
@@ -52,7 +56,28 @@
   .seg-toggle button { border:none; background:var(--panel); color:var(--dim); padding:8px 16px;
     font-size:13px; font-weight:600; cursor:pointer; }
   .seg-toggle button.on { background:var(--accent); color:#fff; }
-  #signal-list-pane { max-height:760px; overflow-y:auto; overflow-x:auto; }
+  /* ===== 시그널 워크스페이스 (signal-apt식 풀뷰포트 레이아웃) ===== */
+  #view-signal { display:flex; flex-direction:column; gap:12px; }
+  .sig-topbar { display:flex; gap:10px 18px; align-items:center; flex-wrap:wrap;
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--r-md); padding:10px 16px; }
+  .sig-topbar .tb-group { display:flex; gap:8px; align-items:center; }
+  .sig-topbar .tb-label { font-size:11px; color:var(--dim); font-weight:600; letter-spacing:.02em; }
+  .sig-topbar .tb-sep { width:1px; align-self:stretch; background:var(--line); margin:2px 0; }
+  .sig-topbar .tb-detail { font-size:12px; color:var(--dim); }
+  .macro-chips { display:flex; gap:7px; flex-wrap:wrap; }
+  .macro-chip { display:flex; flex-direction:column; gap:1px; border:1px solid var(--line);
+    border-radius:9px; padding:5px 10px; background:var(--bg); min-width:76px; }
+  .macro-chip .mc-label { font-size:10px; color:var(--dim); }
+  .macro-chip .mc-value { font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .macro-chip .mc-chg { font-size:10px; font-variant-numeric:tabular-nums; }
+  .mc-bad { color:var(--sig-sell); } .mc-good { color:var(--sig-buy); } .mc-flat { color:var(--dim); }
+  .sig-workspace { display:flex; gap:16px; align-items:stretch;
+    height:clamp(480px, 74vh, 900px); }
+  .sig-list { flex:0 0 42%; min-width:0; overflow:auto; padding:0; }
+  .sig-list .dtable th { position:sticky; top:0; background:var(--panel); z-index:1; }
+  .sig-chart-pane { flex:1 1 58%; min-width:0; display:flex; flex-direction:column; }
+  .sig-chart-pane .pane-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
+  #signal-chart { flex:1 1 auto; min-height:0; width:100%; }
   table.dtable tr.selected-row { background:var(--accent-weak); }
   .card { border:1px solid var(--line); border-radius:var(--r-lg); background:var(--panel); padding:20px; }
   .card:hover { box-shadow:var(--shadow); }
@@ -84,9 +109,26 @@
   .sig-pill.중립 { background:var(--sig-neutral); }
   .sig-pill.약세 { background:var(--sig-watch); }
   .sig-pill.조정 { background:var(--sig-sell); }
-  footer { border-top:1px solid var(--line); padding:12px 18px; display:flex; gap:18px; flex-wrap:wrap;
-    align-items:center; font-size:12px; color:var(--dim); background:var(--panel); }
+  footer { flex:0 0 auto; border-top:1px solid var(--line); padding:12px clamp(16px,3.5vw,44px); display:flex;
+    gap:18px; flex-wrap:wrap; align-items:center; font-size:12px; color:var(--dim); background:var(--panel); }
   footer b { color:var(--txt); }
+
+  /* 반응형: 좁은 화면에서 워크스페이스를 세로로 쌓음 */
+  @media (max-width:900px){
+    .sig-workspace { flex-direction:column; height:auto; }
+    .sig-list { flex:none; max-height:320px; }
+    #signal-chart { height:58vh; min-height:360px; }
+    .sig-chart-pane { min-height:420px; }
+  }
+  @media (max-width:640px){
+    header { padding:10px 14px; gap:8px 6px; align-items:center; }
+    header h1 { font-size:16px; flex:1 1 auto; }
+    .right { order:2; gap:6px; }               /* 제목과 같은 줄(오른쪽 끝) */
+    .tabs { order:3; flex-basis:100%; overflow-x:auto; }  /* 탭은 아래 줄에서 가로 스크롤 */
+    .tab { padding:6px 10px; font-size:12px; white-space:nowrap; }
+    .macro-chip { flex:1 1 44%; min-width:0; }
+    .view-doc, .view-app { padding-left:14px; padding-right:14px; }
+  }
 
   #authGate { position:fixed; inset:0; z-index:9999; display:none; align-items:center; justify-content:center;
     background:linear-gradient(160deg,#eef2ff,#f8fafc); }
@@ -122,42 +164,49 @@
 </header>
 
 <main>
-  <div id="view-signal" style="display:none">
-    <h2 class="page-head">시그널</h2>
-    <p class="page-desc">시장 국면 + 종목/섹터 매수·매도 시그널. 백테스트 성적표로 적중률을 검증합니다.
-      왼쪽 목록에서 종목을 클릭하면 오른쪽에 가격·RSI·MACD 차트와 해설이 표시됩니다.</p>
-    <div class="card bleed" id="regime-banner" style="margin-bottom:16px;display:none">
-      <div class="row" style="gap:10px">
-        <span class="stat-label" style="margin:0">시장 국면</span>
+  <div id="view-signal" class="view-app" style="display:none">
+    <div class="sig-topbar">
+      <div class="tb-group">
+        <span class="tb-label">시장 국면</span>
         <span id="regime-pill" class="sig-pill">-</span>
-        <span id="regime-detail" style="color:var(--dim);font-size:12px"></span>
+        <span id="regime-detail" class="tb-detail"></span>
+      </div>
+      <div class="tb-sep" id="macro-sep" style="display:none"></div>
+      <div class="tb-group" id="macro-group" style="display:none">
+        <span class="tb-label">거시 시황</span>
+        <span id="macro-bias" class="sig-pill">-</span>
+        <div class="macro-chips" id="macro-chips"></div>
       </div>
     </div>
-    <div class="split bleed">
-      <div class="card" id="signal-list-pane"><div id="signal-body" class="placeholder">불러오는 중…</div></div>
-      <div class="card" id="signal-chart-pane">
-        <div id="signal-chart-title" style="font-weight:700;font-size:15px;margin-bottom:8px">종목을 선택하세요</div>
+    <div class="sig-workspace">
+      <div class="sig-list card" style="padding:0">
+        <div id="signal-body" class="placeholder" style="padding:32px 0">불러오는 중…</div>
+      </div>
+      <div class="sig-chart-pane card">
+        <div class="pane-head">
+          <span id="signal-chart-title" style="font-weight:700;font-size:15px">종목을 선택하세요</span>
+        </div>
         <div id="signal-narrative" class="placeholder" style="display:none;background:var(--accent-weak);
-          border-radius:var(--r-md);padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:12px;text-align:left"></div>
-        <div id="signal-chart" style="height:480px"></div>
+          border-radius:var(--r-md);padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:10px;text-align:left"></div>
+        <div id="signal-chart"></div>
       </div>
     </div>
   </div>
 
-  <div id="view-valuation" style="display:none">
+  <div id="view-valuation" class="view-doc" style="display:none">
     <h2 class="page-head">저평가</h2>
     <p class="page-desc">PER·PBR이 유니버스 내 상대적으로 낮은(저평가) 순으로 정렬합니다 — 섹터 분류가
       붙기 전까지는 전체 유니버스 기준 상대 순위입니다.</p>
     <div class="card"><div id="valuation-body" class="placeholder">불러오는 중…</div></div>
   </div>
 
-  <div id="view-candidates" style="display:none">
+  <div id="view-candidates" class="view-doc" style="display:none">
     <h2 class="page-head">후보</h2>
     <p class="page-desc">눌림목·낙폭과대·IPO(공모주)·실적서프라이즈·턴어라운드 후보를 기회도순으로 통합 조회합니다.</p>
     <div class="card"><div id="candidates-body" class="placeholder">불러오는 중…</div></div>
   </div>
 
-  <div id="view-portfolio" style="display:none">
+  <div id="view-portfolio" class="view-app" style="display:none">
     <h2 class="page-head">포트폴리오</h2>
     <p class="page-desc">시그널 기반 자동매매(KIS 모의투자)와 관심종목을 한 곳에서 관리합니다.</p>
     <div class="seg-toggle">
@@ -166,13 +215,13 @@
     </div>
 
     <div id="portfolio-bot">
-      <div class="card-row bleed">
+      <div class="card-row">
         <div class="card"><div class="stat-label">현금</div><div class="stat-value" id="bot-cash">-</div></div>
         <div class="card"><div class="stat-label">총평가금액</div><div class="stat-value" id="bot-total">-</div></div>
         <div class="card"><div class="stat-label">총손익률</div><div class="stat-value" id="bot-pl">-</div></div>
         <div class="card"><div class="stat-label">보유종목수</div><div class="stat-value" id="bot-count">-</div></div>
       </div>
-      <div class="card bleed" style="margin-bottom:16px">
+      <div class="card" style="margin-bottom:16px">
         <div class="row">
           <span class="stat-label" style="margin:0">봇 상태:</span>
           <span id="bot-status-label" style="font-weight:700">-</span>
@@ -181,7 +230,7 @@
           <span class="stat-label" id="bot-kis-status" style="margin-left:auto"></span>
         </div>
       </div>
-      <div class="split bleed">
+      <div class="split">
         <div class="card">
           <b style="font-size:14px">보유종목</b>
           <div id="bot-holdings-body" class="placeholder" style="padding:16px 0">불러오는 중…</div>
@@ -207,7 +256,7 @@
     </div>
   </div>
 
-  <div id="view-report" style="display:none">
+  <div id="view-report" class="view-doc" style="display:none">
     <h2 class="page-head">AI 리포트</h2>
     <p class="page-desc">관심 종목 80% + 신규 발굴 20% 블렌드로 리포트를 생성합니다.</p>
     <div class="card">
@@ -216,7 +265,7 @@
     </div>
   </div>
 
-  <div id="view-mypage" style="display:none">
+  <div id="view-mypage" class="view-doc" style="display:none">
     <h2 class="page-head">마이페이지</h2>
     <p class="page-desc" id="mp_email"></p>
     <div class="card">
@@ -310,7 +359,7 @@ function switchTab(t){
   if(!_ROUTES.includes(t)) t = 'signal';
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   _ROUTES.forEach(v => { const el = document.getElementById('view-' + v); if (el) el.style.display = (v === t) ? '' : 'none'; });
-  if (t === 'signal') { loadSignals(); loadRegime(); }
+  if (t === 'signal') { loadSignals(); loadRegime(); loadMacro(); }
   if (t === 'valuation') loadValuation();
   if (t === 'candidates') loadStub('candidates', '/api/candidates/all');
   if (t === 'portfolio') switchPortfolioSegment(_portfolioSegment);
@@ -334,6 +383,10 @@ function routeFromHash(){
   return false;
 }
 window.addEventListener('hashchange', routeFromHash);
+window.addEventListener('resize', () => {
+  if (_signalChart) _signalChart.resize();
+  if (_botChart) _botChart.resize();
+});
 
 async function loadStub(key, url){
   const el = document.getElementById(key + '-body');
@@ -350,19 +403,47 @@ function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<
 function fmtNum(n, digits){ return (n == null) ? '-' : n.toFixed(digits ?? 2); }
 
 async function loadRegime(){
-  const banner = document.getElementById('regime-banner');
+  const pill = document.getElementById('regime-pill');
+  const detail = document.getElementById('regime-detail');
   try {
     const d = await (await fetch('/api/regime')).json();
-    if (!d.ready) { banner.style.display = 'none'; return; }
-    banner.style.display = '';
-    const pill = document.getElementById('regime-pill');
+    if (!d.ready) { pill.textContent = '데이터 없음'; pill.className = 'sig-pill HOLD'; detail.textContent = ''; return; }
     pill.textContent = d.regime;
     pill.className = 'sig-pill ' + d.regime;
-    document.getElementById('regime-detail').textContent =
-      `MA60 상회 종목 ${fmtNum(d.breadth_pct, 1)}% · 평균 20일 모멘텀 ${d.avg_momentum_pct > 0 ? '+' : ''}${fmtNum(d.avg_momentum_pct, 1)}% (표본 ${d.n}종목)`;
+    detail.textContent =
+      `MA60 상회 ${fmtNum(d.breadth_pct, 1)}% · 평균 20일 모멘텀 ${d.avg_momentum_pct > 0 ? '+' : ''}${fmtNum(d.avg_momentum_pct, 1)}%`;
   } catch (e) {
-    banner.style.display = 'none';
+    pill.textContent = '-'; pill.className = 'sig-pill HOLD'; detail.textContent = '';
   }
+}
+
+// 거시 시황(FRED): 지표별 favor(+1 우호/-1 비우호)로 화살표 색을 정직하게 칠한다.
+async function loadMacro(){
+  const group = document.getElementById('macro-group');
+  const sep = document.getElementById('macro-sep');
+  const hide = () => { group.style.display = 'none'; sep.style.display = 'none'; };
+  try {
+    const d = await (await fetch('/api/macro')).json();
+    if (!d.ready || !d.indicators.length) { hide(); return; }
+    group.style.display = ''; sep.style.display = '';
+    const bias = document.getElementById('macro-bias');
+    bias.textContent = '거시 ' + (d.bias || '-');
+    bias.className = 'sig-pill ' + (d.bias === '우호' ? 'BUY' : d.bias === '비우호' ? 'SELL' : 'HOLD');
+    document.getElementById('macro-chips').innerHTML = d.indicators.map(m => {
+      const isPct = m.unit === '%' || m.unit === '% YoY';
+      const val = m.key === 'NASDAQCOM' ? Math.round(m.value).toLocaleString()
+                : fmtNum(m.value, 2) + (isPct ? '%' : '');
+      // 지수(나스닥/VIX)는 % 등락, 금리·CPI는 %p 변화
+      const chgUnit = (m.key === 'NASDAQCOM' || m.key === 'VIXCLS') ? '%' : '%p';
+      const arrow = m.dir > 0 ? '▲' : m.dir < 0 ? '▼' : '–';
+      const favorCls = m.favor > 0 ? 'mc-good' : m.favor < 0 ? 'mc-bad' : 'mc-flat';  // 우호=초록, 비우호=빨강
+      const chg = m.change == null ? '' :
+        `<span class="mc-chg ${favorCls}">${arrow} ${m.change > 0 ? '+' : ''}${fmtNum(m.change, 2)}${chgUnit}</span>`;
+      return `<div class="macro-chip" title="${esc(m.label)} · ${m.asof}">
+        <span class="mc-label">${esc(m.label)}</span>
+        <span class="mc-value">${val}</span>${chg}</div>`;
+    }).join('');
+  } catch (e) { hide(); }
 }
 
 let _signalItems = {};
