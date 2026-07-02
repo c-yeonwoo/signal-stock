@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from signal_desk.ingest import dart, krx, krx_open_api
+from signal_desk.ingest import dart, fred, krx, krx_open_api
 
 log = logging.getLogger("signal_desk.store")
 
@@ -20,6 +20,7 @@ CACHE_DIR = Path("data/cache")
 UNIVERSE_FILE = CACHE_DIR / "universe.json"
 PRICES_FILE = CACHE_DIR / "prices.parquet"
 FUNDAMENTALS_FILE = CACHE_DIR / "fundamentals.json"
+MACRO_FILE = CACHE_DIR / "macro.json"
 
 PRICE_HISTORY_DAYS = 400  # MA120 워밍업 + 백테스트 여유분
 
@@ -99,10 +100,23 @@ def fetch_fundamentals(universe: list[dict] | None = None, bsns_year: str | None
     return out
 
 
+def fetch_macro() -> list[dict]:
+    """FRED 거시 지표(CPI/금리/나스닥/VIX)를 수집해 캐시. 키 없으면 빈 리스트."""
+    items = fred.macro_indicators()
+    _write_json(MACRO_FILE, items)
+    return items
+
+
 def load_universe() -> list[dict]:
     if not UNIVERSE_FILE.exists():
         return []
     return json.loads(UNIVERSE_FILE.read_text(encoding="utf-8"))
+
+
+def load_macro() -> list[dict]:
+    if not MACRO_FILE.exists():
+        return []
+    return json.loads(MACRO_FILE.read_text(encoding="utf-8"))
 
 
 def load_price_series() -> dict[str, list[float]]:

@@ -47,7 +47,13 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
   정성적/시국/정세 등은 BACKLOG "아이디어" 참고, 이번 범위 밖)
 - [x] 낙폭과대 반등/단기과열 조정(`signals/reversion.py`) — N일 누적수익률+RSI 확인, 순수 가격 데이터
 - [x] 시장 국면(`signals/regime.py`) — 유니버스 breadth(MA60 상회 비율)+평균 20일 모멘텀 근사,
-  `/api/regime`, 시그널 탭 상단 배너. 지수 API 승인 없이 계산 가능
+  `/api/regime`, 시그널 탭 상단 시황 스트립. 지수 API 승인 없이 계산 가능
+- [x] 거시 시황(`ingest/fred.py`+`signals/macro.py`) — FRED로 미 CPI(YoY)·기준금리·10년물·나스닥·VIX
+  수집 후 우호/중립/비우호로 요약, `/api/macro`, 시그널 탭 시황 스트립에 지표칩+판정. 한국 증시가
+  미 물가·금리·나스닥에 연동되는 점을 이용한 **시장 전체 오버레이**(개별 종목 팩터 아님)
+- [x] 레이아웃 개편 — 시그널/포트폴리오 탭을 signal-apt식 풀뷰포트 워크스페이스로(좌 리스트/우 차트,
+  차트가 높이를 채움), body flex-column으로 footer 하단 고정, `.view-doc`(문서형)/`.view-app`
+  (워크스페이스형) 분리, 640px 이하 반응형
 - [x] 백테스트 성적표(`method: price_based_v2`, 기술+낙폭과대) — `/api/backtest`, 200종목 표본
 - [x] 밸류에이션(저평가) 스크리닝(BACKLOG #13) — `signals/valuation.py`, `/api/valuation`, 저평가 탭
   실데이터. `valuation.scores()`로 종합 시그널(#3)에도 팩터로 반영

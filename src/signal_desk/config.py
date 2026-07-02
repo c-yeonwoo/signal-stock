@@ -54,6 +54,11 @@ def ecos_key() -> str | None:
     return os.environ.get("ECOS_API_KEY")
 
 
+def fred_key() -> str | None:
+    """FRED(미 세인트루이스 연은) API 키 — CPI/기준금리/국채금리/나스닥 등 거시 시황 지표."""
+    return os.environ.get("FRED_API_KEY")
+
+
 def alphavantage_key() -> str | None:
     return os.environ.get("ALPHAVANTAGE_API_KEY")
 
