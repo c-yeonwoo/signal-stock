@@ -49,6 +49,12 @@
   ul.watchlist li { display:flex; justify-content:space-between; align-items:center;
     border:1px solid var(--line); border-radius:var(--r-md); padding:10px 14px; }
   ul.watchlist button { border:none; background:none; color:var(--sig-sell); cursor:pointer; font-size:13px; }
+  table.dtable { width:100%; border-collapse:collapse; font-size:13px; }
+  table.dtable th { text-align:left; color:var(--dim); font-weight:600; font-size:11px;
+    padding:6px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  table.dtable td { padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  table.dtable tr:last-child td { border-bottom:none; }
+  table.dtable td.num, table.dtable th.num { text-align:right; font-variant-numeric:tabular-nums; }
   footer { border-top:1px solid var(--line); padding:12px 18px; display:flex; gap:18px; flex-wrap:wrap;
     align-items:center; font-size:12px; color:var(--dim); background:var(--panel); }
   footer b { color:var(--txt); }
@@ -95,7 +101,8 @@
 
   <div id="view-valuation" style="display:none">
     <h2 class="page-head">저평가</h2>
-    <p class="page-desc">섹터/시총 등급 대비 밸류에이션(PER·PBR·성장)이 저평가된 종목을 찾습니다.</p>
+    <p class="page-desc">PER·PBR이 유니버스 내 상대적으로 낮은(저평가) 순으로 정렬합니다 — 섹터 분류가
+      붙기 전까지는 전체 유니버스 기준 상대 순위입니다.</p>
     <div class="card"><div id="valuation-body" class="placeholder">불러오는 중…</div></div>
   </div>
 
@@ -221,7 +228,7 @@ function switchTab(t){
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   _ROUTES.forEach(v => { const el = document.getElementById('view-' + v); if (el) el.style.display = (v === t) ? '' : 'none'; });
   if (t === 'signal') loadStub('signal', '/api/signals');
-  if (t === 'valuation') loadStub('valuation', '/api/valuation');
+  if (t === 'valuation') loadValuation();
   if (t === 'candidates') loadStub('candidates', '/api/candidates/all');
   if (t === 'watchlist') loadWatchlist();
   if (t === 'mypage') fillMyPage();
@@ -241,6 +248,34 @@ async function loadStub(key, url){
   try {
     const d = await (await fetch(url)).json();
     el.textContent = d.ready ? JSON.stringify(d) : '아직 준비 중인 기능입니다 — 2단계 이후 채워집니다.';
+  } catch (e) {
+    el.textContent = '불러오지 못했습니다.';
+  }
+}
+
+function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmtNum(n, digits){ return (n == null) ? '-' : n.toFixed(digits ?? 2); }
+
+async function loadValuation(){
+  const el = document.getElementById('valuation-body');
+  el.textContent = '불러오는 중…';
+  try {
+    const d = await (await fetch('/api/valuation')).json();
+    if (!d.ready) { el.textContent = '아직 수집된 데이터가 없습니다 — /api/refresh를 먼저 호출하세요.'; return; }
+    if (!d.items.length) { el.textContent = 'PER/PBR 데이터를 가진 종목이 없습니다.'; return; }
+    const rows = d.items.map((r, i) => `<tr>
+      <td>${i + 1}</td>
+      <td>${esc(r.name)}<div style="color:var(--dim);font-size:11px">${esc(r.ticker)}</div></td>
+      <td class="num">${fmtNum(r.per, 1)}</td>
+      <td class="num">${fmtNum(r.pbr, 2)}</td>
+      <td class="num">${r.roe == null ? '-' : fmtNum(r.roe, 1) + '%'}</td>
+      <td class="num">${fmtNum(r.valuation_score, 1)}</td>
+    </tr>`).join('');
+    el.className = '';
+    el.innerHTML = `<table class="dtable"><thead><tr>
+      <th>#</th><th>종목</th><th class="num">PER</th><th class="num">PBR</th>
+      <th class="num">ROE</th><th class="num">저평가점수</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
   } catch (e) {
     el.textContent = '불러오지 못했습니다.';
   }

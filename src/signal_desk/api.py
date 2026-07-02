@@ -15,6 +15,7 @@ from fastapi import Body, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from signal_desk import auth, config, db, store
+from signal_desk.signals import valuation
 from signal_desk.signals.engine import backtest_summary, evaluate
 
 config.load_env()
@@ -124,6 +125,11 @@ def _backtest():
     return backtest_summary(store.load_price_series())
 
 
+@lru_cache(maxsize=1)
+def _valuation():
+    return valuation.screen(store.load_universe(), store.load_fundamentals())
+
+
 @app.get("/api/signals")
 def signals_get():
     if not store.is_ready():
@@ -141,22 +147,26 @@ def backtest_get():
 
 @app.post("/api/refresh")
 def refresh():
-    """유니버스+시세(+DART 키 있으면 재무)를 재수집하고 시그널/백테스트 캐시를 무효화."""
+    """유니버스+시세(+DART 키 있으면 재무)를 재수집하고 시그널/백테스트/밸류에이션 캐시를 무효화."""
     universe = store.fetch_universe()
     store.fetch_prices(universe)
     fundamentals = store.fetch_fundamentals(universe)
     _signals.cache_clear()
     _backtest.cache_clear()
+    _valuation.cache_clear()
     return {"ok": True, "universe_size": len(universe), "fundamentals_size": len(fundamentals)}
 
 
-# ---------- 탭 스텁 (다음 단계에서 실데이터로 교체) ----------
 @app.get("/api/valuation")
-def valuation_stub():
-    """TODO(phase5): 섹터/등급 대비 저평가(PER·PBR·성장) 스크리닝."""
-    return {"ready": False, "items": []}
+def valuation_get():
+    """PER/PBR 저평가 순위(0=가장 저평가) — signals/valuation.py 참고. 섹터 분류 붙기 전까지는
+    전체 유니버스 내 상대 순위로 근사."""
+    if not store.is_ready():
+        return {"ready": False, "items": []}
+    return {"ready": True, "items": _valuation()}
 
 
+# ---------- 탭 스텁 (다음 단계에서 실데이터로 교체) ----------
 @app.get("/api/candidates/all")
 def candidates_stub():
     """TODO(phase4): 통합 후보 뷰(눌림목·낙폭과대·IPO·실적서프라이즈·턴어라운드) + 기회도."""
