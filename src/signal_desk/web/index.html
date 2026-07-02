@@ -21,7 +21,7 @@
     font-size:14px; padding:9px 12px; border:1px solid var(--line); border-radius:10px;
     background:#fff; color:var(--txt); outline:none; }
   select:focus, input:focus, .ctrl:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--ring); }
-  header { padding:15px 24px; border-bottom:1px solid var(--line); display:flex;
+  header { flex:0 0 auto; padding:15px 24px; border-bottom:1px solid var(--line); display:flex;
            align-items:center; gap:14px; flex-wrap:wrap; min-height:64px; box-sizing:border-box;
            background:var(--panel); box-shadow:0 3px 10px rgba(2,32,71,.10); position:relative; z-index:600; }
   header h1 { font-size:18px; margin:0; white-space:nowrap; }
@@ -31,6 +31,15 @@
          color:var(--dim); cursor:pointer; font-size:14px; font-weight:600; }
   .tab.on { color:#fff; background:var(--accent); border-color:var(--accent); }
   .right { margin-left:auto; display:flex; gap:10px; align-items:center; }
+  /* 시황 바 — 네비게이션 바로 아래 전역 노출 밴드(단순화) */
+  .market-bar { display:flex; align-items:center; gap:7px 12px; flex-wrap:wrap;
+    padding:9px clamp(16px,3.5vw,44px); border-bottom:1px solid var(--line); background:var(--panel); }
+  .market-bar .tb-label { font-size:11px; color:var(--dim); font-weight:700; }
+  .market-bar .tb-detail { font-size:12px; color:var(--dim); }
+  .market-bar .tb-sep { width:1px; height:16px; background:var(--line); }
+  .market-bar .macro-chip { flex-direction:row; align-items:baseline; gap:5px; padding:3px 9px; min-width:0; }
+  .market-bar .macro-chip .mc-label { font-size:10px; }
+  .market-bar .macro-chip .mc-value { font-size:12px; }
   .btn { padding:8px 14px; border:1px solid var(--line); border-radius:var(--r-sm); background:var(--panel);
          color:var(--txt); cursor:pointer; font-size:13px; }
   .btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:700; }
@@ -72,10 +81,10 @@
   .macro-chip .mc-chg { font-size:10px; font-variant-numeric:tabular-nums; }
   .mc-bad { color:var(--sig-sell); } .mc-good { color:var(--sig-buy); } .mc-flat { color:var(--dim); }
   .sig-workspace { display:flex; gap:16px; align-items:stretch;
-    height:clamp(480px, 74vh, 900px); }
-  .sig-list { flex:0 0 42%; min-width:0; overflow:auto; padding:0; }
+    height:clamp(520px, 80vh, 980px); }
+  .sig-list { flex:0 0 300px; min-width:0; overflow:auto; padding:0; }
   .sig-list .dtable th { position:sticky; top:0; background:var(--panel); z-index:1; }
-  .sig-chart-pane { flex:1 1 58%; min-width:0; display:flex; flex-direction:column; }
+  .sig-chart-pane { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
   .sig-chart-pane .pane-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
   #signal-chart { flex:1 1 auto; min-height:0; width:100%; }
   table.dtable tr.selected-row { background:var(--accent-weak); }
@@ -189,29 +198,27 @@
   </div>
 </header>
 
+<div class="market-bar" id="market-ribbon">
+  <span class="tb-label">시황</span>
+  <span id="regime-pill" class="sig-pill">-</span>
+  <span id="regime-detail" class="tb-detail"></span>
+  <span class="tb-sep" id="macro-sep" style="display:none"></span>
+  <span id="macro-bias" class="sig-pill" style="display:none">-</span>
+  <div class="macro-chips" id="macro-chips"></div>
+</div>
+
 <main>
   <div id="view-signal" class="view-app" style="display:none">
-    <div class="sig-topbar">
-      <div class="tb-group">
-        <span class="tb-label">시장 국면</span>
-        <span id="regime-pill" class="sig-pill">-</span>
-        <span id="regime-detail" class="tb-detail"></span>
-      </div>
-      <div class="tb-sep" id="macro-sep" style="display:none"></div>
-      <div class="tb-group" id="macro-group" style="display:none">
-        <span class="tb-label">거시 시황</span>
-        <span id="macro-bias" class="sig-pill">-</span>
-        <div class="macro-chips" id="macro-chips"></div>
-      </div>
-    </div>
     <div class="sig-workspace">
       <div class="sig-list card" style="padding:0">
         <div id="signal-body" class="placeholder" style="padding:32px 0">불러오는 중…</div>
       </div>
       <div class="sig-chart-pane card">
         <div class="pane-head">
-          <span id="signal-chart-title" style="font-weight:700;font-size:15px">종목을 선택하세요</span>
+          <span id="signal-chart-title" style="font-weight:700;font-size:16px">종목을 선택하세요</span>
+          <span id="signal-chart-sub" class="tb-detail"></span>
         </div>
+        <div id="signal-intro" style="display:none;font-size:12px;color:var(--dim);margin:0 0 8px;line-height:1.5"></div>
         <div id="signal-narrative" class="placeholder" style="display:none;background:var(--accent-weak);
           border-radius:var(--r-md);padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:10px;text-align:left"></div>
         <div id="signal-chart"></div>
@@ -387,7 +394,7 @@ function switchTab(t){
   if(!_ROUTES.includes(t)) t = 'signal';
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   _ROUTES.forEach(v => { const el = document.getElementById('view-' + v); if (el) el.style.display = (v === t) ? '' : 'none'; });
-  if (t === 'signal') { loadSignals(); loadRegime(); loadMacro(); }
+  if (t === 'signal') loadSignals();  // 시황 리본은 전역(startApp에서 로드)
   if (t === 'valuation') loadValuation();
   if (t === 'cycle') loadCycle();
   if (t === 'valuechain') loadValuechain();
@@ -540,23 +547,24 @@ async function loadRegime(){
 }
 
 // 거시 시황(FRED): 지표별 favor(+1 우호/-1 비우호)로 화살표 색을 정직하게 칠한다.
+const _PCT_CHG = new Set(['NASDAQCOM', 'VIXCLS', 'DEXKOUS']);  // % 등락(그 외 금리·CPI는 %p)
 async function loadMacro(){
-  const group = document.getElementById('macro-group');
   const sep = document.getElementById('macro-sep');
-  const hide = () => { group.style.display = 'none'; sep.style.display = 'none'; };
+  const bias = document.getElementById('macro-bias');
+  const chips = document.getElementById('macro-chips');
+  const hide = () => { sep.style.display = 'none'; bias.style.display = 'none'; chips.innerHTML = ''; };
   try {
     const d = await (await fetch('/api/macro')).json();
     if (!d.ready || !d.indicators.length) { hide(); return; }
-    group.style.display = ''; sep.style.display = '';
-    const bias = document.getElementById('macro-bias');
+    sep.style.display = ''; bias.style.display = '';
     bias.textContent = '거시 ' + (d.bias || '-');
     bias.className = 'sig-pill ' + (d.bias === '우호' ? 'BUY' : d.bias === '비우호' ? 'SELL' : 'HOLD');
-    document.getElementById('macro-chips').innerHTML = d.indicators.map(m => {
+    chips.innerHTML = d.indicators.map(m => {
       const isPct = m.unit === '%' || m.unit === '% YoY';
-      const val = m.key === 'NASDAQCOM' ? Math.round(m.value).toLocaleString()
+      const val = m.key === 'DEXKOUS' ? Math.round(m.value).toLocaleString() + '원'
+                : m.key === 'NASDAQCOM' ? Math.round(m.value).toLocaleString()
                 : fmtNum(m.value, 2) + (isPct ? '%' : '');
-      // 지수(나스닥/VIX)는 % 등락, 금리·CPI는 %p 변화
-      const chgUnit = (m.key === 'NASDAQCOM' || m.key === 'VIXCLS') ? '%' : '%p';
+      const chgUnit = _PCT_CHG.has(m.key) ? '%' : '%p';
       const arrow = m.dir > 0 ? '▲' : m.dir < 0 ? '▼' : '–';
       const favorCls = m.favor > 0 ? 'mc-good' : m.favor < 0 ? 'mc-bad' : 'mc-flat';  // 우호=초록, 비우호=빨강
       const chg = m.change == null ? '' :
@@ -578,18 +586,14 @@ async function loadSignals(){
     if (!d.ready) { el.textContent = d.message || '아직 수집된 데이터가 없습니다 — /api/refresh를 먼저 호출하세요.'; return; }
     if (!d.items.length) { el.textContent = '시그널 데이터가 없습니다.'; return; }
     _signalItems = Object.fromEntries(d.items.map(r => [r.ticker, r]));
-    const rows = d.items.map((r, i) => `<tr class="clickable-row" data-ticker="${esc(r.ticker)}">
-      <td>${i + 1}</td>
+    const rows = d.items.map(r => `<tr class="clickable-row" data-ticker="${esc(r.ticker)}">
       <td>${esc(r.name)}<div style="color:var(--dim);font-size:11px">${esc(r.ticker)}</div></td>
+      <td style="font-size:12px;color:var(--dim)">${r.sector ? esc(r.sector) : '–'}</td>
       <td><span class="sig-pill ${r.kind}">${r.kind}</span></td>
-      <td class="num">${r.score > 0 ? '+' : ''}${fmtNum(r.score, 2)}</td>
-      <td class="num">${fmtNum(r.confidence, 2)}</td>
-      <td class="reasons">${r.reasons.slice(0, 2).map(esc).join(' · ')}</td>
     </tr>`).join('');
     el.className = '';
     el.innerHTML = `<table class="dtable"><thead><tr>
-      <th>#</th><th>종목</th><th>시그널</th><th class="num">점수</th>
-      <th class="num">신뢰도</th><th>근거</th>
+      <th>종목</th><th>섹터</th><th>시그널</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
     el.querySelectorAll('tr.clickable-row').forEach(tr => {
       tr.addEventListener('click', () => selectSignalRow(tr.dataset.ticker));
@@ -615,22 +619,41 @@ const _ZONE_COLOR = { BUY: '#22c55e', SELL: '#dc2626' };
 
 let _signalChart = null;
 async function showSignalChart(ticker, item){
-  document.getElementById('signal-chart-title').textContent = item ? `${item.name} (${ticker})` : ticker;
+  // 드릴다운 헤더: 종목명(섹터)+시그널 점수 → 기업 소개(정적) → 시그널 해설
+  document.getElementById('signal-chart-title').textContent = item ? item.name : ticker;
+  const sub = document.getElementById('signal-chart-sub');
+  if (item) {
+    sub.innerHTML = `<span style="color:var(--dim)">${esc(ticker)}${item.sector ? ' · ' + esc(item.sector) : ''}</span>`
+      + ` &nbsp;<span class="sig-pill ${item.kind}">${item.kind}</span>`
+      + ` <span style="color:var(--dim)">점수 ${item.score > 0 ? '+' : ''}${fmtNum(item.score, 2)} · 신뢰도 ${fmtNum(item.confidence, 2)}</span>`;
+  } else sub.textContent = '';
+  const introEl = document.getElementById('signal-intro');
+  if (item && item.intro) {
+    introEl.style.display = '';
+    introEl.innerHTML = `🏭 <b style="color:var(--txt)">${esc(item.intro)}</b>${item.intro_desc ? ' — ' + esc(item.intro_desc) : ''}`;
+  } else introEl.style.display = 'none';
   const narrEl = document.getElementById('signal-narrative');
-  if (item && item.narrative) {
-    narrEl.style.display = '';
-    narrEl.innerHTML = `<span class="sig-pill ${item.kind}">${item.kind}</span> &nbsp;${esc(item.narrative)}`;
-  } else {
-    narrEl.style.display = 'none';
-  }
+  if (item && item.narrative) { narrEl.style.display = ''; narrEl.textContent = item.narrative; }
+  else narrEl.style.display = 'none';
   const holder = document.getElementById('signal-chart');
   try {
     const d = await (await fetch(`/api/signals/${encodeURIComponent(ticker)}/chart`)).json();
     if (!d.ready) { holder.innerHTML = ''; holder.textContent = '차트 데이터가 없습니다.'; return; }
     if (!_signalChart) _signalChart = echarts.init(holder);
-    const markArea = (d.zones || []).length ? {
+    // 기간: 최대 1년(거래일 ~252)까지만 보여주고, 기본 확대 구간은 최근 1개월(~21거래일)
+    const CAP = 252, N = d.dates.length, s0 = Math.max(0, N - CAP);
+    const dates = d.dates.slice(s0), close = d.close.slice(s0),
+          ma20 = d.ma20.slice(s0), ma60 = d.ma60.slice(s0), ma120 = d.ma120.slice(s0),
+          rsi = d.rsi.slice(s0), macd = d.macd.slice(s0),
+          macdSig = d.macd_signal.slice(s0), macdHist = d.macd_hist.slice(s0);
+    const first = dates[0];
+    const zones = (d.zones || []).filter(z => z.end >= first)
+      .map(z => ({ kind: z.kind, start: z.start < first ? first : z.start, end: z.end }));
+    const vis = Math.min(dates.length, 21);
+    const zoomStart = Math.max(0, (1 - vis / dates.length) * 100);
+    const markArea = zones.length ? {
       itemStyle: { opacity: 0.10 },
-      data: d.zones.map(z => [
+      data: zones.map(z => [
         { xAxis: z.start, itemStyle: { color: _ZONE_COLOR[z.kind] } },
         { xAxis: z.end },
       ]),
@@ -650,9 +673,9 @@ async function showSignalChart(ticker, item){
         { left: 55, right: 20, top: '72%', height: '13%' },
       ],
       xAxis: [
-        { type: 'category', data: d.dates, gridIndex: 0, axisLabel: { show: false } },
-        { type: 'category', data: d.dates, gridIndex: 1, axisLabel: { show: false } },
-        { type: 'category', data: d.dates, gridIndex: 2, axisLabel: { show: false } },
+        { type: 'category', data: dates, gridIndex: 0, axisLabel: { show: false } },
+        { type: 'category', data: dates, gridIndex: 1, axisLabel: { show: false } },
+        { type: 'category', data: dates, gridIndex: 2, axisLabel: { show: false } },
       ],
       yAxis: [
         { gridIndex: 0, scale: true },
@@ -660,19 +683,19 @@ async function showSignalChart(ticker, item){
         { gridIndex: 2, scale: true },
       ],
       dataZoom: [
-        { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 4, height: 20 },
-        { type: 'inside', xAxisIndex: [0, 1, 2] },
+        { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 4, height: 20, start: zoomStart, end: 100 },
+        { type: 'inside', xAxisIndex: [0, 1, 2], start: zoomStart, end: 100 },
       ],
       series: [
-        { name: '종가', type: 'line', data: d.close, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false,
+        { name: '종가', type: 'line', data: close, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false,
           lineStyle: { width: 2, color: '#4f46e5' }, markArea },
-        { name: 'MA20', type: 'line', data: d.ma20, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
-        { name: 'MA60', type: 'line', data: d.ma60, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
-        { name: 'MA120', type: 'line', data: d.ma120, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
-        { name: 'RSI', type: 'line', data: d.rsi, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#d97706' } },
-        { name: 'MACD 히스토그램', type: 'bar', data: d.macd_hist, xAxisIndex: 2, yAxisIndex: 2 },
-        { name: 'MACD', type: 'line', data: d.macd, xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, lineStyle: { width: 1 } },
-        { name: 'Signal', type: 'line', data: d.macd_signal, xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, lineStyle: { width: 1 } },
+        { name: 'MA20', type: 'line', data: ma20, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
+        { name: 'MA60', type: 'line', data: ma60, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
+        { name: 'MA120', type: 'line', data: ma120, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
+        { name: 'RSI', type: 'line', data: rsi, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#d97706' } },
+        { name: 'MACD 히스토그램', type: 'bar', data: macdHist, xAxisIndex: 2, yAxisIndex: 2 },
+        { name: 'MACD', type: 'line', data: macd, xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, lineStyle: { width: 1 } },
+        { name: 'Signal', type: 'line', data: macdSig, xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, lineStyle: { width: 1 } },
       ],
     }, true);
     _signalChart.resize();
@@ -890,6 +913,7 @@ async function removeWatch(key){
 // ===== 부팅 =====
 async function startApp(needOnboard){
   applyProfileHeader();
+  loadRegime(); loadMacro();  // 시황 리본은 전역 노출 — 어느 탭에서도 보이게 시작 시 로드
   if (needOnboard) {
     document.getElementById('onbDlg').showModal();
   } else {

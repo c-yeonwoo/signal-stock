@@ -248,3 +248,13 @@ def key_for_tag(tag: str) -> str | None:
         if tag in s["tags"]:
             return s["key"]
     return None
+
+
+def company_position(ticker: str) -> dict | None:
+    """국내 티커의 밸류체인 포지셔닝: {sector, stage, stage_desc}. 큐레이션에 없으면 None.
+    시그널 탭에서 '뭐하는 기업인지' 정적 소개(사실 기반, 환각 없음)로 재활용한다."""
+    for s in SECTORS:
+        for st in s["stages"]:
+            if any(c.get("ticker") == ticker for c in st["domestic"]):
+                return {"sector": s["name"], "stage": st["stage"], "stage_desc": st["desc"]}
+    return None

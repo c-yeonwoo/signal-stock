@@ -170,7 +170,15 @@ def _macro():
 def signals_get():
     if not store.is_ready():
         return {"ready": False, "items": [], "message": "아직 수집된 데이터가 없습니다. /api/refresh를 먼저 호출하세요."}
-    return {"ready": True, "items": [asdict(r) for r in _signals()]}
+    items = []
+    for r in _signals():
+        d = asdict(r)
+        pos = valuechain.company_position(r.ticker)  # 밸류체인 큐레이션에서 섹터·소개 재활용
+        d["sector"] = pos["sector"] if pos else None
+        d["intro"] = f"{pos['sector']} 밸류체인 · {pos['stage']}" if pos else None
+        d["intro_desc"] = pos["stage_desc"] if pos else None
+        items.append(d)
+    return {"ready": True, "items": items}
 
 
 @app.get("/api/backtest")

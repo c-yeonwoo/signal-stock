@@ -71,6 +71,10 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
   큐레이션, `/api/valuechain`. 국내기업 → 시그널 딥링크
 - [x] 봇 매매 근거 강화 — bot_trades에 score·note(타이밍·수량 산정근거) 추가, 포트폴리오
   거래내역에 상시 노출("BUY 점수 +2.06 — 동일가중 8% ÷ 가격 = N주" / "손절선 -7% 이탈 …")
+- [x] 시그널 탭 다듬기 — 좌 리스트는 종목·섹터·시그널만(폭 축소), 우측 차트 확대 + 드릴다운
+  헤더(종목·시그널 → 기업 소개[밸류체인 포지셔닝, 정적] → 시그널 해설). 섹터·소개는 밸류체인
+  큐레이션에서 역추출. 차트 기간 기본 1개월·최대 1년. 시황 지표는 네비 아래 전역 밴드로 이동
+  (`.market-bar`, 단순화) + 원/달러(FRED DEXKOUS) 추가
 - [x] 백테스트 성적표(`method: price_based_v2`, 기술+낙폭과대) — `/api/backtest`, 200종목 표본
 - [x] 밸류에이션(저평가) 스크리닝(BACKLOG #13) — `signals/valuation.py`, `/api/valuation`, 저평가 탭
   실데이터. `valuation.scores()`로 종합 시그널(#3)에도 팩터로 반영
