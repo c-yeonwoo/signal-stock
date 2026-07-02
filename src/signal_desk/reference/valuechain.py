@@ -231,6 +231,21 @@ SECTORS = [
     },
 ]
 
+# GICS 11 섹터(한국어 약칭)로 각 밸류체인 테마를 상위 분류 — 시그널 리스트 '섹터' 컬럼 표준.
+# 밸류체인 테마(예: 반도체)는 더 세분화된 개념이라, 대표 GICS 섹터 하나로 매핑한다(근사).
+_GICS = {
+    "semiconductor": "IT",
+    "ai_datacenter": "IT",
+    "battery": "IT",
+    "auto": "경기소비재",
+    "defense": "산업재",
+    "energy": "에너지",
+    "power_nuclear": "유틸리티",
+    "bio": "헬스케어",
+}
+for _s in SECTORS:
+    _s["gics"] = _GICS.get(_s["key"])
+
 _BY_KEY = {s["key"]: s for s in SECTORS}
 
 
@@ -256,5 +271,5 @@ def company_position(ticker: str) -> dict | None:
     for s in SECTORS:
         for st in s["stages"]:
             if any(c.get("ticker") == ticker for c in st["domestic"]):
-                return {"sector": s["name"], "stage": st["stage"], "stage_desc": st["desc"]}
+                return {"sector": s["name"], "gics": s.get("gics"), "stage": st["stage"], "stage_desc": st["desc"]}
     return None

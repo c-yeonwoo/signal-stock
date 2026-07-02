@@ -82,7 +82,9 @@
   .mc-bad { color:var(--sig-sell); } .mc-good { color:var(--sig-buy); } .mc-flat { color:var(--dim); }
   .sig-workspace { display:flex; gap:16px; align-items:stretch;
     height:clamp(520px, 80vh, 980px); }
-  .sig-list { flex:0 0 300px; min-width:0; overflow:auto; padding:0; }
+  .sig-list { flex:0 0 380px; min-width:0; overflow-y:auto; overflow-x:hidden; padding:0; }
+  .sig-list table.dtable th, .sig-list table.dtable td { padding:8px 7px; }
+  .sig-list table.dtable td:nth-child(2) { white-space:normal; }  /* 긴 종목명은 줄바꿈(가로 스크롤 방지) */
   .sig-list .dtable th { position:sticky; top:0; background:var(--panel); z-index:1; }
   .sig-chart-pane { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
   .sig-chart-pane .pane-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
@@ -225,6 +227,8 @@
         <div id="signal-intro" style="display:none;font-size:12px;color:var(--dim);margin:0 0 8px;line-height:1.5"></div>
         <div id="signal-narrative" class="placeholder" style="display:none;background:var(--accent-weak);
           border-radius:var(--r-md);padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:10px;text-align:left"></div>
+        <div id="signal-legend" style="display:none;font-size:11px;color:var(--dim);margin-bottom:4px">
+          <span style="color:var(--sig-buy);font-weight:700">▲ 매수</span> · <span style="color:var(--sig-sell);font-weight:700">▼ 매도</span> 시그널 발생 지점 · 음영 = 시그널 유지 구간</div>
         <div id="signal-chart"></div>
       </div>
     </div>
@@ -406,6 +410,7 @@ window.addEventListener('resize', () => {
   if (_signalChart) _signalChart.resize();
   if (_botChart) _botChart.resize();
   if (_cycleChart) _cycleChart.resize();
+  if (_vcChart) _vcChart.resize();
 });
 
 function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -496,28 +501,57 @@ async function loadValuechain(){
   selectVcSector(_vcCurrent || _vcData[0].key);
 }
 
-function _vcCompanies(list){
-  return list.map(c => {
-    const isKr = c.ticker && /^\d{6}$/.test(c.ticker);
-    const tk = c.ticker ? ` <span style="color:var(--dim)">${esc(c.ticker)}</span>` : '';
-    return isKr
-      ? `<span class="vc-co link" onclick="gotoSignal('${c.ticker}')">${esc(c.name)}${tk}</span>`
-      : `<span class="vc-co">${esc(c.name)}${tk}</span>`;
-  }).join('');
-}
-
+let _vcChart = null;
 function selectVcSector(key){
   _vcCurrent = key;
   document.querySelectorAll('#vc-sectors button').forEach(b => b.classList.toggle('on', b.dataset.k === key));
   const s = _vcData.find(x => x.key === key);
   if (!s) return;
   document.getElementById('vc-detail').innerHTML =
-    `<p class="page-desc" style="margin:0 0 14px">${esc(s.summary)}</p>
-     <div class="vc-stages">${s.stages.map(st => `<div class="vc-stage">
-       <h4>${esc(st.stage)}</h4><div class="st-desc">${esc(st.desc)}</div>
-       <div class="vc-grp-label">국내 · 코스피</div><div>${_vcCompanies(st.domestic)}</div>
-       <div class="vc-grp-label">해외</div><div>${_vcCompanies(st.overseas)}</div>
-     </div>`).join('')}</div>`;
+    `<p class="page-desc" style="margin:0 0 8px"><b>${esc(s.name)}</b>${s.gics ? ` <span class="sector-chip">${esc(s.gics)}</span>` : ''} · ${esc(s.summary)}</p>
+     <div id="vc-diagram" style="width:100%"></div>
+     <div style="font-size:11px;color:var(--dim);margin-top:6px">
+       <span style="color:var(--sig-buy);font-weight:700">● 국내(코스피)</span> 클릭 시 시그널 이동 ·
+       <span style="color:var(--sig-neutral);font-weight:700">● 해외</span> · 왼쪽 업스트림 → 오른쪽 다운스트림</div>`;
+  drawVcDiagram(s);
+}
+
+function drawVcDiagram(s){
+  const holder = document.getElementById('vc-diagram');
+  const leaves = s.stages.reduce((a, st) => a + st.domestic.length + st.overseas.length, 0);
+  holder.style.height = Math.min(880, Math.max(340, leaves * 27)) + 'px';
+  if (_vcChart) _vcChart.dispose();
+  _vcChart = echarts.init(holder);
+  const isKr = (c) => c.ticker && /^\d{6}$/.test(c.ticker);
+  const co = (c) => ({
+    name: c.name, _ticker: isKr(c) ? c.ticker : null,
+    symbolSize: 9, itemStyle: { color: isKr(c) ? '#16a34a' : '#94a3b8' },
+    label: { color: '#1e293b', fontSize: 11 },
+    tooltip: { formatter: `${esc(c.name)}${c.ticker ? ' · ' + esc(c.ticker) : ''}${isKr(c) ? ' · 클릭하면 시그널' : ''}` },
+  });
+  const root = {
+    name: s.name, symbolSize: 20, itemStyle: { color: '#4f46e5' },
+    label: { color: '#4f46e5', fontWeight: 700, fontSize: 13 },
+    children: s.stages.map(st => ({
+      name: st.stage.replace(' · ', '\n'), symbolSize: 15, itemStyle: { color: '#334155' },
+      label: { color: '#334155', fontWeight: 600, fontSize: 11 },
+      children: [...st.domestic.map(co), ...st.overseas.map(co)],
+    })),
+  };
+  _vcChart.setOption({
+    tooltip: { trigger: 'item' },
+    series: [{
+      type: 'tree', data: [root], top: 12, bottom: 12, left: '14%', right: '18%',
+      orient: 'LR', edgeShape: 'curve', symbol: 'circle', expandAndCollapse: false,
+      label: { position: 'left', align: 'right', fontSize: 11 },
+      leaves: { label: { position: 'right', align: 'left' } },
+      lineStyle: { color: '#cbd5e1', width: 1.2, curveness: 0.5 },
+      initialTreeDepth: -1, animationDuration: 450,
+    }],
+  }, true);
+  _vcChart.off('click');
+  _vcChart.on('click', (p) => { if (p.data && p.data._ticker) gotoSignal(p.data._ticker); });
+  _vcChart.resize();
 }
 
 async function loadRegime(){
@@ -645,17 +679,28 @@ async function showSignalChart(ticker, item){
           rsi = d.rsi.slice(s0), macd = d.macd.slice(s0),
           macdSig = d.macd_signal.slice(s0), macdHist = d.macd_hist.slice(s0);
     const first = dates[0];
-    const zones = (d.zones || []).filter(z => z.end >= first)
-      .map(z => ({ kind: z.kind, start: z.start < first ? first : z.start, end: z.end }));
-    const vis = Math.min(dates.length, 21);
+    const rawZones = (d.zones || []).filter(z => z.end >= first);
+    const zones = rawZones.map(z => ({ kind: z.kind, start: z.start < first ? first : z.start, end: z.end }));
+    const vis = Math.min(dates.length, 63);  // 기본 확대 = 최근 3개월(거래일 ~63)
     const zoomStart = Math.max(0, (1 - vis / dates.length) * 100);
     const markArea = zones.length ? {
-      itemStyle: { opacity: 0.10 },
+      itemStyle: { opacity: 0.08 },
       data: zones.map(z => [
         { xAxis: z.start, itemStyle: { color: _ZONE_COLOR[z.kind] } },
         { xAxis: z.end },
       ]),
     } : undefined;
+    // 시그널 발생 '지점' 마커 — 구간 시작점이 곧 시그널 전환점(매수 ▲ / 매도 ▼)
+    const idxOf = {}; dates.forEach((dt, i) => { idxOf[dt] = i; });
+    const markPoint = rawZones.length ? { data: rawZones.map(z => {
+      const i = idxOf[z.start < first ? first : z.start]; if (i == null) return null;
+      return z.kind === 'BUY'
+        ? { coord: [dates[i], close[i]], symbol: 'triangle', symbolSize: 12, symbolOffset: [0, 16],
+            itemStyle: { color: '#16a34a' }, label: { show: true, position: 'bottom', formatter: '매수', color: '#16a34a', fontSize: 10, fontWeight: 700 } }
+        : { coord: [dates[i], close[i]], symbol: 'triangle', symbolRotate: 180, symbolSize: 12, symbolOffset: [0, -16],
+            itemStyle: { color: '#dc2626' }, label: { show: true, position: 'top', formatter: '매도', color: '#dc2626', fontSize: 10, fontWeight: 700 } };
+    }).filter(Boolean) } : undefined;
+    document.getElementById('signal-legend').style.display = '';
     _signalChart.setOption({
       animation: false,
       tooltip: { trigger: 'axis' },
@@ -686,7 +731,7 @@ async function showSignalChart(ticker, item){
       ],
       series: [
         { name: '종가', type: 'line', data: close, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false,
-          lineStyle: { width: 2, color: '#4f46e5' }, markArea },
+          lineStyle: { width: 2, color: '#4f46e5' }, markArea, markPoint },
         { name: 'MA20', type: 'line', data: ma20, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
         { name: 'MA60', type: 'line', data: ma60, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },
         { name: 'MA120', type: 'line', data: ma120, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1 } },

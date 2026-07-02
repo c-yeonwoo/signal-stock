@@ -174,7 +174,7 @@ def signals_get():
     for r in _signals():
         d = asdict(r)
         pos = valuechain.company_position(r.ticker)  # 밸류체인 큐레이션에서 섹터·소개 재활용
-        d["sector"] = pos["sector"] if pos else None
+        d["sector"] = pos["gics"] if pos else None  # 시그널 리스트 컬럼은 GICS 섹터
         d["intro"] = f"{pos['sector']} 밸류체인 · {pos['stage']}" if pos else None
         d["intro_desc"] = pos["stage_desc"] if pos else None
         items.append(d)
