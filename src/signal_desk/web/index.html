@@ -79,6 +79,32 @@
   .sig-chart-pane .pane-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
   #signal-chart { flex:1 1 auto; min-height:0; width:100%; }
   table.dtable tr.selected-row { background:var(--accent-weak); }
+
+  /* ===== 사이클 ===== */
+  .phase-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+  .phase-card { border:1px solid var(--line); border-radius:var(--r-md); padding:14px 16px; background:var(--panel); }
+  .phase-card.current { border-color:var(--accent); box-shadow:0 0 0 2px var(--ring); }
+  .phase-card h4 { margin:0 0 8px; font-size:15px; }
+  .phase-meta { font-size:12px; color:var(--dim); margin-bottom:10px; line-height:1.55; }
+  .sector-chip { display:inline-block; padding:3px 10px; margin:0 4px 5px 0; border:1px solid var(--line);
+    border-radius:999px; font-size:12px; background:var(--bg); color:var(--dim); }
+  .sector-chip.link { cursor:pointer; color:var(--accent); border-color:var(--ring); }
+  .sector-chip.link:hover { background:var(--accent-weak); }
+
+  /* ===== 밸류체인 ===== */
+  .vc-sectors { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
+  .vc-sectors button { padding:7px 15px; border:1px solid var(--line); border-radius:999px;
+    background:var(--panel); color:var(--dim); font-size:13px; font-weight:600; cursor:pointer; }
+  .vc-sectors button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .vc-stages { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:16px; }
+  .vc-stage { border:1px solid var(--line); border-radius:var(--r-md); padding:16px; background:var(--panel); }
+  .vc-stage h4 { margin:0 0 4px; font-size:14px; }
+  .vc-stage .st-desc { font-size:12px; color:var(--dim); margin-bottom:12px; line-height:1.5; }
+  .vc-grp-label { font-size:11px; color:var(--dim); font-weight:700; margin:10px 0 6px; }
+  .vc-co { display:inline-block; padding:4px 10px; margin:0 5px 6px 0; border:1px solid var(--line);
+    border-radius:8px; font-size:12px; background:var(--bg); }
+  .vc-co.link { cursor:pointer; color:var(--accent); border-color:var(--ring); }
+  .vc-co.link:hover { background:var(--accent-weak); }
   .card { border:1px solid var(--line); border-radius:var(--r-lg); background:var(--panel); padding:20px; }
   .card:hover { box-shadow:var(--shadow); }
   .placeholder { color:var(--dim); font-size:13px; padding:32px 0; text-align:center; }
@@ -152,10 +178,10 @@
   <h1>Signal Desk</h1>
   <div class="tabs">
     <button class="tab" data-tab="signal" onclick="switchTab('signal')">시그널</button>
-    <button class="tab" data-tab="valuation" onclick="switchTab('valuation')">저평가</button>
-    <button class="tab" data-tab="candidates" onclick="switchTab('candidates')">후보</button>
     <button class="tab" data-tab="portfolio" onclick="switchTab('portfolio')">포트폴리오</button>
-    <button class="tab" data-tab="report" onclick="switchTab('report')">AI리포트</button>
+    <button class="tab" data-tab="valuation" onclick="switchTab('valuation')">저평가</button>
+    <button class="tab" data-tab="cycle" onclick="switchTab('cycle')">사이클</button>
+    <button class="tab" data-tab="valuechain" onclick="switchTab('valuechain')">밸류체인</button>
   </div>
   <div class="right">
     <span id="myPageLabel" class="btn" onclick="switchTab('mypage')" style="cursor:pointer"></span>
@@ -194,16 +220,27 @@
   </div>
 
   <div id="view-valuation" class="view-doc" style="display:none">
-    <h2 class="page-head">저평가</h2>
-    <p class="page-desc">PER·PBR이 유니버스 내 상대적으로 낮은(저평가) 순으로 정렬합니다 — 섹터 분류가
-      붙기 전까지는 전체 유니버스 기준 상대 순위입니다.</p>
+    <h2 class="page-head">저평가 <span style="color:var(--dim);font-size:14px;font-weight:600">· 발견</span></h2>
+    <p class="page-desc">PER·PBR이 유니버스 내 상대적으로 낮은(저평가) 순으로 정렬합니다 — 사이클·밸류체인에서
+      주목한 섹터의 종목이 실제로 싼지 여기서 확인하세요. 섹터 분류 전까지는 전체 유니버스 상대 순위입니다.</p>
     <div class="card"><div id="valuation-body" class="placeholder">불러오는 중…</div></div>
   </div>
 
-  <div id="view-candidates" class="view-doc" style="display:none">
-    <h2 class="page-head">후보</h2>
-    <p class="page-desc">눌림목·낙폭과대·IPO(공모주)·실적서프라이즈·턴어라운드 후보를 기회도순으로 통합 조회합니다.</p>
-    <div class="card"><div id="candidates-body" class="placeholder">불러오는 중…</div></div>
+  <div id="view-cycle" class="view-app" style="display:none">
+    <h2 class="page-head">사이클</h2>
+    <p class="page-desc">경기순환(회복→확장→둔화→수축)과 물가·금리 흐름에 따라 어떤 산업이 주도하는지 —
+      현재 위치는 미 CPI·금리(FRED)로 근사 추정합니다. 주도섹터를 누르면 밸류체인으로 연결됩니다.</p>
+    <div class="card" id="cycle-current" style="margin-bottom:16px"><div class="placeholder" style="padding:8px 0">불러오는 중…</div></div>
+    <div class="card" style="margin-bottom:16px"><div id="cycle-chart" style="height:300px"></div></div>
+    <div class="phase-grid" id="cycle-phases"></div>
+  </div>
+
+  <div id="view-valuechain" class="view-app" style="display:none">
+    <h2 class="page-head">밸류체인</h2>
+    <p class="page-desc">섹터별 업스트림~다운스트림 구조와 국내(코스피)·해외(나스닥) 대표기업.
+      국내 기업을 누르면 시그널 차트로 이동합니다. (구성은 큐레이션 스냅샷 · 추천 아님)</p>
+    <div class="vc-sectors" id="vc-sectors"></div>
+    <div id="vc-detail"><div class="placeholder">불러오는 중…</div></div>
   </div>
 
   <div id="view-portfolio" class="view-app" style="display:none">
@@ -253,15 +290,6 @@
         </div>
         <ul class="watchlist" id="watchlist-body"></ul>
       </div>
-    </div>
-  </div>
-
-  <div id="view-report" class="view-doc" style="display:none">
-    <h2 class="page-head">AI 리포트</h2>
-    <p class="page-desc">관심 종목 80% + 신규 발굴 20% 블렌드로 리포트를 생성합니다.</p>
-    <div class="card">
-      <button class="btn primary" onclick="requestAiReport()">리포트 생성</button>
-      <div id="report-body" class="placeholder"></div>
     </div>
   </div>
 
@@ -351,7 +379,7 @@
 </dialog>
 
 <script>
-const _ROUTES = ['signal','valuation','candidates','portfolio','report','mypage'];
+const _ROUTES = ['signal','portfolio','valuation','cycle','valuechain','mypage'];
 let _userEmail = '', _profile = {};
 let _portfolioSegment = 'bot';
 
@@ -361,7 +389,8 @@ function switchTab(t){
   _ROUTES.forEach(v => { const el = document.getElementById('view-' + v); if (el) el.style.display = (v === t) ? '' : 'none'; });
   if (t === 'signal') { loadSignals(); loadRegime(); loadMacro(); }
   if (t === 'valuation') loadValuation();
-  if (t === 'candidates') loadStub('candidates', '/api/candidates/all');
+  if (t === 'cycle') loadCycle();
+  if (t === 'valuechain') loadValuechain();
   if (t === 'portfolio') switchPortfolioSegment(_portfolioSegment);
   if (t === 'mypage') fillMyPage();
   if (location.hash.slice(1) !== t) history.replaceState(null, '', '#' + t);
@@ -386,21 +415,114 @@ window.addEventListener('hashchange', routeFromHash);
 window.addEventListener('resize', () => {
   if (_signalChart) _signalChart.resize();
   if (_botChart) _botChart.resize();
+  if (_cycleChart) _cycleChart.resize();
 });
-
-async function loadStub(key, url){
-  const el = document.getElementById(key + '-body');
-  el.textContent = '불러오는 중…';
-  try {
-    const d = await (await fetch(url)).json();
-    el.textContent = d.ready ? JSON.stringify(d) : '아직 준비 중인 기능입니다 — 2단계 이후 채워집니다.';
-  } catch (e) {
-    el.textContent = '불러오지 못했습니다.';
-  }
-}
 
 function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmtNum(n, digits){ return (n == null) ? '-' : n.toFixed(digits ?? 2); }
+
+// ===== 탭 간 이동(사이클 → 밸류체인 → 시그널) =====
+let _pendingSignalTicker = null, _vcData = null, _vcCurrent = null;
+function gotoValuechain(key){ _vcCurrent = key; switchTab('valuechain'); }
+function gotoSignal(ticker){ _pendingSignalTicker = ticker; switchTab('signal'); }
+
+// ===== 사이클 =====
+const _PHASE_AREA = {
+  recovery: 'rgba(34,197,94,.10)', expansion: 'rgba(79,70,229,.10)',
+  slowdown: 'rgba(217,119,6,.13)', contraction: 'rgba(220,38,38,.10)',
+};
+let _cycleChart = null;
+
+async function loadCycle(){
+  let d;
+  try { d = await (await fetch('/api/cycle')).json(); }
+  catch (e) { document.getElementById('cycle-current').innerHTML = '<div class="placeholder">불러오지 못했습니다.</div>'; return; }
+  const cur = d.current;
+  const curEl = document.getElementById('cycle-current');
+  if (cur.ready) {
+    curEl.innerHTML = `<div class="row" style="gap:12px">
+      <span class="tb-label">현재 국면(추정)</span>
+      <span class="sig-pill" style="background:var(--accent)">${esc(cur.phase_name)}</span>
+      <span class="tb-detail">${cur.reasons.map(esc).join(' · ')}</span></div>`;
+  } else {
+    curEl.innerHTML = '<div class="placeholder" style="padding:8px 0">현재 국면 추정에 필요한 거시(FRED) 데이터가 없습니다 — /api/refresh 후 표시됩니다.</div>';
+  }
+  drawCycleChart(d.phases, cur);
+  document.getElementById('cycle-phases').innerHTML = d.phases.map(p => {
+    const isCur = cur.ready && cur.phase_key === p.key;
+    const chips = p.lead_sectors.map(s => s.vc_key
+      ? `<span class="sector-chip link" onclick="gotoValuechain('${s.vc_key}')">${esc(s.name)}</span>`
+      : `<span class="sector-chip">${esc(s.name)}</span>`).join('');
+    return `<div class="phase-card${isCur ? ' current' : ''}">
+      <h4>${p.order}. ${esc(p.name)}${isCur ? ' <span style="color:var(--accent);font-size:11px">● 현재</span>' : ''}</h4>
+      <div class="phase-meta">금리 · ${esc(p.rate)}<br>물가 · ${esc(p.inflation)}<br>${esc(p.desc)}</div>
+      <div>${chips}</div></div>`;
+  }).join('');
+}
+
+function drawCycleChart(phases, cur){
+  const holder = document.getElementById('cycle-chart');
+  if (!_cycleChart) _cycleChart = echarts.init(holder);
+  const pts = [];
+  for (let i = 0; i <= 60; i++) { const x = i / 60; pts.push([x, -Math.cos(2 * Math.PI * x)]); }
+  const areas = phases.map((p, i) => [
+    { xAxis: i * 0.25, itemStyle: { color: _PHASE_AREA[p.key] },
+      label: { show: true, position: 'insideTop', color: '#64748b', fontSize: 12, fontWeight: 600, formatter: p.name } },
+    { xAxis: (i + 1) * 0.25 },
+  ]);
+  const series = [{
+    type: 'line', data: pts, smooth: true, showSymbol: false, lineStyle: { width: 3, color: '#4f46e5' },
+    markArea: { silent: true, data: areas },
+    markPoint: cur.ready ? {
+      symbol: 'pin', symbolSize: 58, itemStyle: { color: '#4f46e5' },
+      label: { color: '#fff', fontSize: 11, fontWeight: 700, formatter: cur.phase_name },
+      data: [{ coord: [cur.x, -Math.cos(2 * Math.PI * cur.x)] }],
+    } : undefined,
+  }];
+  _cycleChart.setOption({
+    animation: false, grid: { left: 16, right: 16, top: 30, bottom: 16 },
+    xAxis: { type: 'value', min: 0, max: 1, axisLabel: { show: false }, axisTick: { show: false },
+      axisLine: { show: false }, splitLine: { show: false } },
+    yAxis: { show: false, min: -1.5, max: 1.5 },
+    series,
+  }, true);
+  _cycleChart.resize();
+}
+
+// ===== 밸류체인 =====
+async function loadValuechain(){
+  if (!_vcData) {
+    try { _vcData = (await (await fetch('/api/valuechain')).json()).sectors; }
+    catch (e) { document.getElementById('vc-detail').innerHTML = '<div class="placeholder">불러오지 못했습니다.</div>'; return; }
+  }
+  document.getElementById('vc-sectors').innerHTML = _vcData.map(s =>
+    `<button data-k="${s.key}" onclick="selectVcSector('${s.key}')">${esc(s.name)}</button>`).join('');
+  selectVcSector(_vcCurrent || _vcData[0].key);
+}
+
+function _vcCompanies(list){
+  return list.map(c => {
+    const isKr = c.ticker && /^\d{6}$/.test(c.ticker);
+    const tk = c.ticker ? ` <span style="color:var(--dim)">${esc(c.ticker)}</span>` : '';
+    return isKr
+      ? `<span class="vc-co link" onclick="gotoSignal('${c.ticker}')">${esc(c.name)}${tk}</span>`
+      : `<span class="vc-co">${esc(c.name)}${tk}</span>`;
+  }).join('');
+}
+
+function selectVcSector(key){
+  _vcCurrent = key;
+  document.querySelectorAll('#vc-sectors button').forEach(b => b.classList.toggle('on', b.dataset.k === key));
+  const s = _vcData.find(x => x.key === key);
+  if (!s) return;
+  document.getElementById('vc-detail').innerHTML =
+    `<p class="page-desc" style="margin:0 0 14px">${esc(s.summary)}</p>
+     <div class="vc-stages">${s.stages.map(st => `<div class="vc-stage">
+       <h4>${esc(st.stage)}</h4><div class="st-desc">${esc(st.desc)}</div>
+       <div class="vc-grp-label">국내 · 코스피</div><div>${_vcCompanies(st.domestic)}</div>
+       <div class="vc-grp-label">해외</div><div>${_vcCompanies(st.overseas)}</div>
+     </div>`).join('')}</div>`;
+}
 
 async function loadRegime(){
   const pill = document.getElementById('regime-pill');
@@ -472,7 +594,10 @@ async function loadSignals(){
     el.querySelectorAll('tr.clickable-row').forEach(tr => {
       tr.addEventListener('click', () => selectSignalRow(tr.dataset.ticker));
     });
-    selectSignalRow(d.items[0].ticker);  // 기본 선택: 1위 종목
+    // 밸류체인에서 넘어온 종목이 유니버스에 있으면 그걸, 없으면 1위 종목 선택
+    const target = (_pendingSignalTicker && _signalItems[_pendingSignalTicker]) ? _pendingSignalTicker : d.items[0].ticker;
+    _pendingSignalTicker = null;
+    selectSignalRow(target);
   } catch (e) {
     el.textContent = '불러오지 못했습니다.';
   }
@@ -633,10 +758,13 @@ async function loadBotState(){
         <td>${esc(t.name)}</td>
         <td><span class="sig-pill ${t.side === 'buy' ? 'BUY' : 'SELL'}">${t.side === 'buy' ? '매수' : '매도'}</span></td>
         <td class="num">${t.qty}</td><td class="num">${fmtNum(t.price, 0)}</td>
-        <td>${_REASON_LABEL[t.reason] || t.reason}</td>
+        <td class="reasons">
+          <span style="font-weight:600">${_REASON_LABEL[t.reason] || esc(t.reason)}</span>${t.score != null ? ` <span style="color:var(--dim)">· 점수 ${t.score > 0 ? '+' : ''}${fmtNum(t.score, 2)}</span>` : ''}
+          ${t.note ? `<div style="color:var(--dim);font-size:11px;margin-top:2px">${esc(t.note)}</div>` : ''}
+        </td>
       </tr>`).join('');
       tEl.innerHTML = `<table class="dtable"><thead><tr>
-        <th>시각</th><th>종목</th><th>구분</th><th class="num">수량</th><th class="num">가격</th><th>사유</th>
+        <th>시각</th><th>종목</th><th>구분</th><th class="num">수량</th><th class="num">가격</th><th>근거(타이밍·수량)</th>
       </tr></thead><tbody>${rows}</tbody></table>`;
     }
 
@@ -757,14 +885,6 @@ async function addWatch(){
 async function removeWatch(key){
   await fetch('/api/favorites?kind=ticker&key=' + encodeURIComponent(key), {method: 'DELETE'});
   loadWatchlist();
-}
-
-// ===== AI 리포트 =====
-async function requestAiReport(){
-  const el = document.getElementById('report-body');
-  el.textContent = '생성 중…';
-  const d = await (await fetch('/api/report/ai', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})).json();
-  el.textContent = d.available ? d.report : (d.message || '아직 준비 중인 기능입니다.');
 }
 
 // ===== 부팅 =====

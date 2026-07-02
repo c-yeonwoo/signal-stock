@@ -17,6 +17,7 @@ from fastapi import Body, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from signal_desk import auth, bot, config, db, store
+from signal_desk.reference import cycle, valuechain
 from signal_desk.signals import macro, regime, valuation
 from signal_desk.signals.engine import backtest_summary, compute_indicator_series, evaluate, signal_zones
 
@@ -260,11 +261,22 @@ def bot_run():
     return bot.run_once(force=True)
 
 
-# ---------- 탭 스텁 (다음 단계에서 실데이터로 교체) ----------
-@app.get("/api/candidates/all")
-def candidates_stub():
-    """TODO(phase4): 통합 후보 뷰(눌림목·낙폭과대·IPO·실적서프라이즈·턴어라운드) + 기회도."""
-    return {"ready": False, "items": []}
+# ---------- 사이클 / 밸류체인 (큐레이션 + FRED 현재위치) ----------
+@app.get("/api/cycle")
+def cycle_get():
+    """경기 사이클 4국면 + 국면별 주도섹터, 현재 위치(FRED 거시로 근사 추정).
+    각 주도섹터에 밸류체인 섹터 key(vc_key)를 달아 밸류체인 탭과 연결한다."""
+    phases = []
+    for p in cycle.phases():
+        leads = [{"name": s, "vc_key": valuechain.key_for_tag(s)} for s in p["lead_sectors"]]
+        phases.append({**p, "lead_sectors": leads})
+    return {"phases": phases, "current": cycle.position(_macro()["indicators"])}
+
+
+@app.get("/api/valuechain")
+def valuechain_get():
+    """섹터별 밸류체인(업→다운스트림) 대표기업 큐레이션. 국내는 티커로 시그널 연결 가능."""
+    return {"sectors": valuechain.sectors()}
 
 
 @app.get("/api/macro")
@@ -275,12 +287,6 @@ def macro_get():
     if not data["indicators"]:
         return {"ready": False, "indicators": []}
     return {"ready": True, **data}
-
-
-@app.post("/api/report/ai")
-def report_ai_stub(request: Request, data: dict = Body(...)):
-    """TODO(phase6): 프로필+워치리스트 기반 AI 리포트."""
-    return {"available": False, "message": "준비 중"}
 
 
 # ---------- SPA 서빙 ----------

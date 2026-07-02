@@ -37,6 +37,19 @@ def _today() -> str:
     return datetime.date.today().isoformat()
 
 
+def _sell_note(reason: str, qty: int, avg_price: float, current_price: float,
+               pl_pct: float, risk_cfg: "risk.RiskConfig") -> str:
+    """매도 사유를 사람이 읽는 한 줄 근거로. 왜 지금(타이밍)·얼마나(수량)를 함께 남긴다."""
+    trigger = {
+        "STOP_LOSS": f"손절선 {risk_cfg.stop_loss_pct * 100:.0f}% 이탈",
+        "TAKE_PROFIT": f"익절선 +{risk_cfg.take_profit_pct * 100:.0f}% 도달",
+        "TRAILING": f"고점 대비 {risk_cfg.trailing_from_peak_pct * 100:.0f}% 되돌림(트레일링)",
+        "SIGNAL": "시그널 SELL 전환",
+    }.get(reason, reason)
+    return (f"{trigger} — 평단 {int(avg_price):,}원 → 현재 {int(current_price):,}원"
+            f"({pl_pct:+.1f}%), 보유 전량 {qty}주 청산")
+
+
 def get_state() -> dict:
     """포트폴리오 탭용 종합 상태 — 봇 설정/현금·평가금액/보유종목/최근거래."""
     cfg = db.bot_config_get()
@@ -104,8 +117,12 @@ def run_once(force: bool = False) -> dict:
         if reason:
             result = kis.place_order(ticker, "sell", qty, creds=creds)
             ok = result is not None
+            pl_pct = (current_price / avg_price - 1) * 100 if avg_price else 0
+            sig = signal_by_ticker.get(ticker)
+            note = _sell_note(reason, qty, avg_price, current_price, pl_pct, risk_cfg)
             db.bot_trade_log(ticker, name_by_ticker.get(ticker, ticker), "sell", qty,
-                              current_price, reason, result["order_no"] if ok else None)
+                              current_price, reason, result["order_no"] if ok else None,
+                              score=sig.score if sig else None, note=note)
             sells.append({"ticker": ticker, "qty": qty, "reason": reason, "ok": ok})
             if ok:
                 db.bot_position_delete(ticker)
@@ -138,8 +155,10 @@ def run_once(force: bool = False) -> dict:
                 continue  # 배분금액보다 1주 가격이 비싸면 스킵(정수주 제약)
             result = kis.place_order(s.ticker, "buy", qty, creds=creds)
             ok = result is not None
+            note = (f"BUY 시그널 점수 {s.score:+.2f}(신뢰도 {s.confidence:.2f}) — 동일가중 배분 "
+                    f"{cfg['position_pct'] * 100:.0f}%(약 {int(alloc):,}원) ÷ {int(price):,}원 = {qty}주")
             db.bot_trade_log(s.ticker, s.name, "buy", qty, price, "SIGNAL",
-                              result["order_no"] if ok else None)
+                              result["order_no"] if ok else None, score=s.score, note=note)
             buys.append({"ticker": s.ticker, "qty": qty, "ok": ok})
             if ok:
                 db.bot_position_upsert(s.ticker, s.name, qty, price, price, _today())
