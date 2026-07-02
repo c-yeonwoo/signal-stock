@@ -55,6 +55,11 @@
   table.dtable td { padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
   table.dtable tr:last-child td { border-bottom:none; }
   table.dtable td.num, table.dtable th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  table.dtable td.reasons { white-space:normal; color:var(--dim); font-size:12px; min-width:220px; }
+  .sig-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; color:#fff; }
+  .sig-pill.BUY { background:var(--sig-buy); }
+  .sig-pill.SELL { background:var(--sig-sell); }
+  .sig-pill.HOLD { background:var(--sig-neutral); }
   footer { border-top:1px solid var(--line); padding:12px 18px; display:flex; gap:18px; flex-wrap:wrap;
     align-items:center; font-size:12px; color:var(--dim); background:var(--panel); }
   footer b { color:var(--txt); }
@@ -227,7 +232,7 @@ function switchTab(t){
   if(!_ROUTES.includes(t)) t = 'signal';
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   _ROUTES.forEach(v => { const el = document.getElementById('view-' + v); if (el) el.style.display = (v === t) ? '' : 'none'; });
-  if (t === 'signal') loadStub('signal', '/api/signals');
+  if (t === 'signal') loadSignals();
   if (t === 'valuation') loadValuation();
   if (t === 'candidates') loadStub('candidates', '/api/candidates/all');
   if (t === 'watchlist') loadWatchlist();
@@ -255,6 +260,31 @@ async function loadStub(key, url){
 
 function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmtNum(n, digits){ return (n == null) ? '-' : n.toFixed(digits ?? 2); }
+
+async function loadSignals(){
+  const el = document.getElementById('signal-body');
+  el.textContent = '불러오는 중…';
+  try {
+    const d = await (await fetch('/api/signals')).json();
+    if (!d.ready) { el.textContent = d.message || '아직 수집된 데이터가 없습니다 — /api/refresh를 먼저 호출하세요.'; return; }
+    if (!d.items.length) { el.textContent = '시그널 데이터가 없습니다.'; return; }
+    const rows = d.items.map((r, i) => `<tr>
+      <td>${i + 1}</td>
+      <td>${esc(r.name)}<div style="color:var(--dim);font-size:11px">${esc(r.ticker)}</div></td>
+      <td><span class="sig-pill ${r.kind}">${r.kind}</span></td>
+      <td class="num">${r.score > 0 ? '+' : ''}${fmtNum(r.score, 2)}</td>
+      <td class="num">${fmtNum(r.confidence, 2)}</td>
+      <td class="reasons">${r.reasons.slice(0, 2).map(esc).join(' · ')}</td>
+    </tr>`).join('');
+    el.className = '';
+    el.innerHTML = `<table class="dtable"><thead><tr>
+      <th>#</th><th>종목</th><th>시그널</th><th class="num">점수</th>
+      <th class="num">신뢰도</th><th>근거</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+  } catch (e) {
+    el.textContent = '불러오지 못했습니다.';
+  }
+}
 
 async function loadValuation(){
   const el = document.getElementById('valuation-body');
