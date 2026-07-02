@@ -273,8 +273,15 @@ def replay_signal_kinds(closes: list[float], config: SignalConfig | None = None)
 def signal_zones(
     dates: list[str], closes: list[float], config: SignalConfig | None = None
 ) -> list[dict]:
-    """연속된 동일 시그널(BUY/SELL) 구간을 [{start,end,kind}]로 압축 — 차트 markArea용. HOLD는 제외."""
-    kinds = replay_signal_kinds(closes, config)
+    """연속된 동일 시그널(BUY/SELL) 구간을 [{start,end,kind,reasons}]로 압축 — 차트 markArea/마커용.
+    HOLD는 제외. reasons는 구간 시작(=시그널 전환) 시점의 가격기반 판단 근거(호버 설명용)."""
+    config = config or SignalConfig()
+    series = compute_indicator_series(closes, config)
+    kinds, reasons_at = [], []
+    for k in range(len(closes)):
+        combined = combine(_price_only_components(closes, series, k, config), config)
+        kinds.append(combined["kind"])
+        reasons_at.append(combined["reasons"])
     zones = []
     i, n = 0, len(kinds)
     while i < n:
@@ -284,7 +291,7 @@ def signal_zones(
         j = i
         while j < n and kinds[j] == kinds[i]:
             j += 1
-        zones.append({"start": dates[i], "end": dates[j - 1], "kind": kinds[i]})
+        zones.append({"start": dates[i], "end": dates[j - 1], "kind": kinds[i], "reasons": reasons_at[i]})
         i = j
     return zones
 

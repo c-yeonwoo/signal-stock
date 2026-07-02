@@ -122,7 +122,10 @@ def test_signal_zones_compresses_consecutive_buy_days():
     closes = [100 - i for i in range(20)]
     dates = [f"2026-01-{i + 1:02d}" for i in range(20)]
     zones = engine.signal_zones(dates, closes)
-    assert zones == [{"start": "2026-01-15", "end": "2026-01-20", "kind": "BUY"}]
+    assert len(zones) == 1
+    z = zones[0]
+    assert (z["start"], z["end"], z["kind"]) == ("2026-01-15", "2026-01-20", "BUY")
+    assert isinstance(z["reasons"], list)  # 구간 시작 시점 판단 근거 동봉
 
 
 def test_signal_zones_empty_for_flat_series():
