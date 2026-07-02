@@ -12,9 +12,9 @@ from pathlib import Path
 from fastapi import Body, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from signal_stock import auth, db
+from signal_desk import auth, db
 
-log = logging.getLogger("signal_stock")
+log = logging.getLogger("signal_desk")
 
 WEB_DIR = Path(__file__).parent / "web"
 
@@ -27,7 +27,7 @@ def _uid(request: Request):
     return u["id"] if u else None
 
 
-app = FastAPI(title="signal-stock")
+app = FastAPI(title="signal-desk")
 
 
 @app.middleware("http")

@@ -5,9 +5,9 @@ from fastapi.testclient import TestClient
 
 def _fresh_client(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from signal_stock import db as db_module
+    from signal_desk import db as db_module
     importlib.reload(db_module)
-    from signal_stock import api as api_module
+    from signal_desk import api as api_module
     importlib.reload(api_module)
     return TestClient(api_module.app)
 
@@ -16,7 +16,7 @@ def test_index_served(tmp_path, monkeypatch):
     client = _fresh_client(tmp_path, monkeypatch)
     r = client.get("/")
     assert r.status_code == 200
-    assert "Signal STOCK" in r.text
+    assert "Signal Desk" in r.text
 
 
 def test_api_requires_auth(tmp_path, monkeypatch):

@@ -1,4 +1,4 @@
-# CLAUDE.md — signal-stock
+# CLAUDE.md — signal-desk
 
 "감이 아니라 검증된 적중률로 매수/매도 시그널"을 주는 주식 매매 타이밍 논스톱 플랫폼.
 자매 프로젝트 [Signal APT](https://github.com/c-yeonwoo/apt-signal)(아파트 매매 타이밍)의
@@ -17,7 +17,7 @@
 - **Python 3.11~3.13** (3.14 금지 — Signal APT에서 pandas/pyarrow datetime 추론 세그폴트
   exit 139 이력. 이 리포는 아직 pandas 미도입이라 즉시 리스크는 없지만 2단계부터 적용)
 - FastAPI + uvicorn, typer(CLI), ECharts(CDN, 프론트 차트)
-- 프론트: 단일 파일 `src/signal_stock/web/index.html` (인라인 vanilla JS SPA, 해시 라우팅)
+- 프론트: 단일 파일 `src/signal_desk/web/index.html` (인라인 vanilla JS SPA, 해시 라우팅)
 - 인증: 표준 라이브러리 pbkdf2 세션(`auth.py`) — 외부 의존성 0
 - 데이터: SQLite(`data/cache/app.db`) — 2단계부터 parquet/json 캐시 추가 예정
 
@@ -25,7 +25,7 @@
 
 ```bash
 python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/sigstock serve       # http://127.0.0.1:8765
+.venv/bin/sigdesk serve       # http://127.0.0.1:8765
 .venv/bin/pytest -q
 ```
 
@@ -40,7 +40,7 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 ## 핵심 개념 (부동산 → 주식 번역, 요약)
 
-| Signal APT | Signal STOCK |
+| Signal APT | Signal Desk |
 |---|---|
 | 지역(region) | 섹터/테마 |
 | 단지(complex) | 종목(ticker) |

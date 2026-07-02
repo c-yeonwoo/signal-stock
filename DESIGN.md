@@ -1,7 +1,7 @@
-# Signal STOCK — 디자인 시스템
+# Signal Desk — 디자인 시스템
 
 > 신규 기능·화면 추가 시 **이 문서의 토큰·규칙을 먼저 따른다.** 새 색·폰트·라운드를 임의로 만들지 말 것.
-> 모든 스타일은 `src/signal_stock/web/index.html` 단일 파일(인라인 + `<style>`)에 있음.
+> 모든 스타일은 `src/signal_desk/web/index.html` 단일 파일(인라인 + `<style>`)에 있음.
 > Signal APT([`DESIGN.md`](https://github.com/c-yeonwoo/apt-signal/blob/main/DESIGN.md))의
 > 구조·규칙을 그대로 따르되 브랜드 컬러만 구분한다.
 
@@ -9,7 +9,7 @@
 
 - **아이덴티티**: "감이 아니라 검증된 적중률" — 신뢰·데이터·차분함(Signal APT와 동일 톤).
 - **브랜드 컬러 = 인디고 `#4f46e5`** (`--accent`). Signal APT의 로열블루(`#2563eb`)와 구분되는
-  Signal STOCK 고유 색. 워드마크 `Signal STOCK`. 부제 "검증된 적중률로 찾는 주식 매매 타이밍".
+  Signal Desk 고유 색. 워드마크 `Signal Desk`. 부제 "검증된 적중률로 찾는 주식 매매 타이밍".
 
 ## 2. 토큰 (`:root`, 단일 소스)
 

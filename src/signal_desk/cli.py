@@ -1,8 +1,8 @@
-"""CLI — Signal STOCK.
+"""CLI — Signal Desk.
 
 사용:
-  sigstock serve                 # 웹 대시보드 실행
-  sigstock fetch / build / report  # 2단계(수집기·시그널 엔진) 도입 후 구현
+  sigdesk serve                 # 웹 대시보드 실행
+  sigdesk fetch / build / report  # 2단계(수집기·시그널 엔진) 도입 후 구현
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import os
 import typer
 from rich.console import Console
 
-app = typer.Typer(add_completion=False, help="Signal STOCK — 주식 매매 타이밍 시그널")
+app = typer.Typer(add_completion=False, help="Signal Desk — 주식 매매 타이밍 시그널")
 console = Console()
 
 
@@ -24,8 +24,8 @@ def serve(
     """대시보드 웹서버 실행."""
     import uvicorn
 
-    console.print(f"[green]Signal STOCK:[/green] http://{host}:{port}")
-    uvicorn.run("signal_stock.api:app", host=host, port=port, log_level="warning")
+    console.print(f"[green]Signal Desk:[/green] http://{host}:{port}")
+    uvicorn.run("signal_desk.api:app", host=host, port=port, log_level="warning")
 
 
 @app.command()

@@ -1,4 +1,4 @@
-# Signal STOCK — MVP 기능 백로그
+# Signal Desk — MVP 기능 백로그
 
 1단계 스캐폴딩 이후 붙일 핵심 기능 리스트. Signal APT의
 ["전체 기능 백로그"](https://github.com/c-yeonwoo/apt-signal) 문서 형식(우선순위·범위·리스크)을

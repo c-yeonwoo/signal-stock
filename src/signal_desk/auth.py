@@ -7,10 +7,10 @@ import hmac
 import os
 import secrets
 
-from signal_stock import db
+from signal_desk import db
 
 _ITER = 200_000
-COOKIE = "sigstock_session"
+COOKIE = "sigdesk_session"
 
 
 def hash_pw(pw: str) -> str:

@@ -1,6 +1,6 @@
-# signal-stock
+# signal-desk
 
-**Signal STOCK** — "감이 아니라 검증된 적중률로" 주식 매매 타이밍을 찾는 논스톱 시그널 플랫폼.
+**Signal Desk** — "감이 아니라 검증된 적중률로" 주식 매매 타이밍을 찾는 논스톱 시그널 플랫폼.
 
 [Signal APT](https://github.com/c-yeonwoo/apt-signal)(데이터로 찾는 아파트 매매 타이밍)의
 서비스 본체·아키텍처를 이식하고, 자산을 부동산에서 주식으로 바꿔 재해석한 프로젝트.
@@ -28,7 +28,7 @@
 ```bash
 python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
-.venv/bin/sigstock serve      # http://127.0.0.1:8765
+.venv/bin/sigdesk serve      # http://127.0.0.1:8765
 
 .venv/bin/pytest -q
 ```
@@ -36,7 +36,7 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ## 구조
 
 ```
-src/signal_stock/
+src/signal_desk/
 ├── api.py       # FastAPI 앱 — 인증/온보딩/워치리스트 + 향후 탭용 스텁 라우트
 ├── auth.py      # pbkdf2 세션 인증 (외부 의존성 0)
 ├── db.py        # SQLite (users/sessions/profile/favorites/kv)
