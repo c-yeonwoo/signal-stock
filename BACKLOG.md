@@ -16,7 +16,7 @@
 |---|---|---|
 | [KIS Developers(한국투자증권 오픈API)](https://apiportal.koreainvestment.com/intro) | 실시간 시세(WebSocket)·주문·**모의투자 계좌** | 무료, REST+실시간 소켓. **모의투자 리그**로 실제 돈 없이 자동매매봇 검증 가능 — 신뢰성・법적 리스크 둘 다 낮춤 |
 | [KRX Data Marketplace / Open API](https://data.krx.co.kr/) | 과거 시세·거래대금·공매도·투자자별 매매동향(2010~) | 백테스트용 장기 시계열의 1차 소스 |
-| DART 공시 API | 재무제표(PER/PBR/ROE 산출 원천) | brightdesk에서 이미 연동 이력 있음(`DART_API_KEY`) — 그대로 재사용 |
+| DART 공시 API | 재무제표(ROE/부채비율/매출성장 산출 원천) | ✅ 키 발급·연동·실응답 검증 완료(2026-07-02). PER/PBR은 KRX 종가 결합 필요해 후속 작업 |
 | [pykrx](https://github.com/sharebook-kr/pykrx) | 위 API 공백 시 스크래핑 폴백 | 비공식, 최후 수단으로만 |
 
 미국주식은 위 스택이 자리잡은 뒤(phase1 후반~phase2) AlphaVantage 등으로 확장 — 지금은 범위에서 제외.

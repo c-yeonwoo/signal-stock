@@ -38,7 +38,7 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 **BACKLOG #1~#4 — 시그널 엔진**
 - [x] 기술적분석(`signals/indicators.py`) — RSI14/MACD(12,26,9)/MA20,60,120, brightdesk 공식 그대로 이식
-- [x] 기본적분석(`signals/fundamental.py`) — DART 연동, 키 없으면 자동 생략(그레이스풀 폴백)
+- [x] 기본적분석(`signals/fundamental.py`) — DART 연동(실키로 검증 완료), 키 없으면 자동 생략(그레이스풀 폴백)
 - [x] 통합 시그널(`signals/engine.py`) — 가용 컴포넌트만 재정규화해 결합, `/api/signals` 실데이터
 - [x] 백테스트 성적표 1차(기술점수 단독) — `/api/backtest`
 - [ ] 시장 국면 + 매크로 미니차트, 후보 유형+기회도, 저평가 뷰, phase2 전체 — [BACKLOG.md](BACKLOG.md) 참고
