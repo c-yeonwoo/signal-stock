@@ -228,7 +228,7 @@
         <div id="signal-narrative" class="placeholder" style="display:none;background:var(--accent-weak);
           border-radius:var(--r-md);padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:10px;text-align:left"></div>
         <div id="signal-legend" style="display:none;font-size:11px;color:var(--dim);margin-bottom:4px">
-          <span style="color:var(--sig-buy);font-weight:700">▲ 매수</span> · <span style="color:var(--sig-sell);font-weight:700">▼ 매도</span> 시그널 발생 지점 · 음영 = 시그널 유지 구간</div>
+          <span style="color:var(--sig-buy);font-weight:700">● B</span> Buy · <span style="color:var(--sig-sell);font-weight:700">● S</span> Sell — 지점에 호버하면 근거 표시 · 📍 = 현재 시그널(4팩터) · 음영 = 시그널 유지 구간</div>
         <div id="signal-chart"></div>
       </div>
     </div>
@@ -420,6 +420,23 @@ function fmtKRW(n){  // 큰 금액은 억/만 단위로 압축(카드 넘침 방
   if (n >= 1e8) return (n / 1e8).toFixed(2) + '억원';
   if (n >= 1e4) return Math.round(n / 1e4).toLocaleString() + '만원';
   return Math.round(n).toLocaleString() + '원';
+}
+// 시그널 근거(한국어 태그 문장) → 짧은 영어 요약(차트 마커 호버용)
+const _REASON_EN = [
+  ['골든크로스', 'MACD golden cross'], ['데드크로스', 'MACD dead cross'],
+  ['히스토그램 양전환', 'MACD turning up'], ['히스토그램 음전환', 'MACD turning down'],
+  ['과매도', 'RSI oversold'], ['과매수', 'RSI overbought'], ['약세권', 'RSI weak'], ['강세권', 'RSI strong'],
+  ['정배열', 'Uptrend (MA)'], ['역배열', 'Downtrend (MA)'],
+  ['낙폭과대', 'Oversold rebound'], ['단기과열', 'Overheated pullback'],
+  ['ROE', 'Strong ROE'], ['매출성장', 'Revenue growth'], ['부채비율', 'High debt'], ['배당', 'Dividend'],
+  ['PER', 'Low PER'], ['PBR', 'Low PBR'], ['저평가', 'Undervalued'], ['고평가', 'Overvalued'],
+];
+function reasonEn(reasons){
+  const out = [];
+  (reasons || []).forEach(r => {
+    for (const [ko, en] of _REASON_EN) { if (r.includes(ko)) { if (!out.includes(en)) out.push(en); break; } }
+  });
+  return out.slice(0, 3).join(', ');
 }
 
 // ===== 탭 간 이동(사이클 → 밸류체인 → 시그널) =====
@@ -690,16 +707,29 @@ async function showSignalChart(ticker, item){
         { xAxis: z.end },
       ]),
     } : undefined;
-    // 시그널 발생 '지점' 마커 — 구간 시작점이 곧 시그널 전환점(매수 ▲ / 매도 ▼)
+    // 시그널 '지점' 마커: 과거는 가격기반 전환점(B/S), 현재는 4팩터 전체 시그널을 차트 끝에 별도로.
     const idxOf = {}; dates.forEach((dt, i) => { idxOf[dt] = i; });
-    const markPoint = rawZones.length ? { data: rawZones.map(z => {
+    const mkPts = rawZones.map(z => {
       const i = idxOf[z.start < first ? first : z.start]; if (i == null) return null;
-      return z.kind === 'BUY'
-        ? { coord: [dates[i], close[i]], symbol: 'triangle', symbolSize: 12, symbolOffset: [0, 16],
-            itemStyle: { color: '#16a34a' }, label: { show: true, position: 'bottom', formatter: '매수', color: '#16a34a', fontSize: 10, fontWeight: 700 } }
-        : { coord: [dates[i], close[i]], symbol: 'triangle', symbolRotate: 180, symbolSize: 12, symbolOffset: [0, -16],
-            itemStyle: { color: '#dc2626' }, label: { show: true, position: 'top', formatter: '매도', color: '#dc2626', fontSize: 10, fontWeight: 700 } };
-    }).filter(Boolean) } : undefined;
+      const buy = z.kind === 'BUY';
+      const why = reasonEn(z.reasons || []);
+      return { coord: [dates[i], close[i]], mk: buy ? 'B' : 'S',
+        tip: (buy ? 'Buy' : 'Sell') + (why ? ' — ' + why : ''),
+        symbol: 'circle', symbolSize: 16, symbolOffset: buy ? [0, 22] : [0, -22],
+        itemStyle: { color: buy ? '#16a34a' : '#dc2626' } };
+    }).filter(Boolean);
+    if (item && (item.kind === 'BUY' || item.kind === 'SELL')) {  // 현재 시점 시그널(4팩터)
+      const li = dates.length - 1, buy = item.kind === 'BUY', whyNow = reasonEn(item.reasons);
+      mkPts.push({ coord: [dates[li], close[li]], mk: buy ? 'B' : 'S',
+        tip: 'NOW · ' + (buy ? 'Buy' : 'Sell') + ' (score ' + (item.score > 0 ? '+' : '') + fmtNum(item.score, 2) + ')' + (whyNow ? ' — ' + whyNow : ''),
+        symbol: 'pin', symbolSize: 46, symbolOffset: [0, -6],
+        itemStyle: { color: buy ? '#16a34a' : '#dc2626', borderColor: '#fff', borderWidth: 2 } });
+    }
+    const markPoint = mkPts.length ? {
+      label: { show: true, color: '#fff', fontSize: 10, fontWeight: 700, formatter: (p) => p.data.mk },
+      tooltip: { show: true, trigger: 'item', formatter: (p) => p.data.tip },
+      data: mkPts,
+    } : undefined;
     document.getElementById('signal-legend').style.display = '';
     _signalChart.setOption({
       animation: false,
