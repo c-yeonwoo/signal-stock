@@ -47,4 +47,5 @@ def test_signup_login_profile_flow(tmp_path, monkeypatch):
 
     r = client.get("/api/signals")
     assert r.status_code == 200
-    assert r.json() == {"ready": False, "items": []}
+    assert r.json()["ready"] is False
+    assert r.json()["items"] == []

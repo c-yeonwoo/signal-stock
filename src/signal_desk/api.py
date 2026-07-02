@@ -7,12 +7,17 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import Body, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from signal_desk import auth, db
+from signal_desk import auth, config, db, store
+from signal_desk.signals.engine import backtest_summary, evaluate
+
+config.load_env()
 
 log = logging.getLogger("signal_desk")
 
@@ -108,13 +113,44 @@ def favorites_del(request: Request, kind: str, key: str):
     return {"ok": True}
 
 
-# ---------- 탭 스텁 (2단계 이후 실데이터로 교체) ----------
+# ---------- 시그널 (실데이터, store 캐시 기반) ----------
+@lru_cache(maxsize=1)
+def _signals():
+    return evaluate(store.load_universe(), store.load_price_series(), store.load_fundamentals())
+
+
+@lru_cache(maxsize=1)
+def _backtest():
+    return backtest_summary(store.load_price_series())
+
+
 @app.get("/api/signals")
-def signals_stub():
-    """TODO(phase2): 종목/섹터 시그널 테이블 + 백테스트 성적표."""
-    return {"ready": False, "items": []}
+def signals_get():
+    if not store.is_ready():
+        return {"ready": False, "items": [], "message": "아직 수집된 데이터가 없습니다. /api/refresh를 먼저 호출하세요."}
+    return {"ready": True, "items": [asdict(r) for r in _signals()]}
 
 
+@app.get("/api/backtest")
+def backtest_get():
+    """시그널 적중률 성적표 — 1차 버전은 기술점수 단독(engine.backtest_summary 참고)."""
+    if not store.is_ready():
+        return {"ready": False}
+    return {"ready": True, **_backtest()}
+
+
+@app.post("/api/refresh")
+def refresh():
+    """유니버스+시세(+DART 키 있으면 재무)를 재수집하고 시그널/백테스트 캐시를 무효화."""
+    universe = store.fetch_universe()
+    store.fetch_prices(universe)
+    fundamentals = store.fetch_fundamentals(universe)
+    _signals.cache_clear()
+    _backtest.cache_clear()
+    return {"ok": True, "universe_size": len(universe), "fundamentals_size": len(fundamentals)}
+
+
+# ---------- 탭 스텁 (다음 단계에서 실데이터로 교체) ----------
 @app.get("/api/valuation")
 def valuation_stub():
     """TODO(phase5): 섹터/등급 대비 저평가(PER·PBR·성장) 스크리닝."""

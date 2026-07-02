@@ -29,14 +29,21 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest -q
 ```
 
-## 현재 상태 (1단계 — 스캐폴딩)
+## 현재 상태
 
+**1단계 — 스캐폴딩**
 - [x] FastAPI 앱 골격 + 인증(회원가입/로그인/세션) + 온보딩 프로필 API
 - [x] 워치리스트(즐겨찾기) CRUD API
 - [x] 단일 파일 SPA 셸: 브랜드 토큰 · 5탭 해시 라우팅 · 인증 게이트 · 온보딩 모달
 
-다음에 붙일 기능의 상세 우선순위·범위·의존관계는 [BACKLOG.md](BACKLOG.md) 참고
-(phase1: 데이터소스·기술/기본분석·백테스트·자동매매봇 / phase2: 포트폴리오 시나리오·산업분류·뉴스 등).
+**BACKLOG #1~#4 — 시그널 엔진**
+- [x] 기술적분석(`signals/indicators.py`) — RSI14/MACD(12,26,9)/MA20,60,120, brightdesk 공식 그대로 이식
+- [x] 기본적분석(`signals/fundamental.py`) — DART 연동, 키 없으면 자동 생략(그레이스풀 폴백)
+- [x] 통합 시그널(`signals/engine.py`) — 가용 컴포넌트만 재정규화해 결합, `/api/signals` 실데이터
+- [x] 백테스트 성적표 1차(기술점수 단독) — `/api/backtest`
+- [ ] 시장 국면 + 매크로 미니차트, 후보 유형+기회도, 저평가 뷰, phase2 전체 — [BACKLOG.md](BACKLOG.md) 참고
+
+다음에 붙일 기능의 상세 우선순위·범위·의존관계는 [BACKLOG.md](BACKLOG.md) 참고.
 
 ## 핵심 개념 (부동산 → 주식 번역, 요약)
 
