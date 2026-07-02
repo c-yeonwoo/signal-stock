@@ -116,6 +116,17 @@ def load_price_series() -> dict[str, list[float]]:
     return {ticker: g["close"].tolist() for ticker, g in df.groupby("ticker")}
 
 
+def load_price_history(ticker: str) -> list[dict]:
+    """단일 종목의 (date, close) 시계열(오래된→최신) — 차트용, 날짜를 유지한다."""
+    if not PRICES_FILE.exists():
+        return []
+    df = pd.read_parquet(PRICES_FILE)
+    df = df[df["ticker"] == ticker].sort_values("date")
+    if df.empty:
+        return []
+    return [{"date": row["date"], "close": float(row["close"])} for _, row in df.iterrows()]
+
+
 def load_fundamentals() -> dict[str, dict]:
     if not FUNDAMENTALS_FILE.exists():
         return {}

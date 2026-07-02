@@ -54,12 +54,15 @@ class SignalResult:
 
 
 def compute_indicator_series(closes: list[float], config: SignalConfig | None = None) -> dict:
+    """ma_long(MA120)은 정배열/역배열 판정(technical_score_at)엔 안 쓰이지만(brightdesk 원 공식이
+    MA20/60 크로스오버만 사용), 차트에 추세 참고선으로 보여주기 위해 계산은 해 둔다."""
     config = config or SignalConfig()
     return {
         "rsi": ind.rsi(closes, config.rsi_period),
         "macd": ind.macd(closes, config.macd_fast, config.macd_slow, config.macd_signal),
         "ma_short": ind.sma(closes, config.ma_short),
         "ma_mid": ind.sma(closes, config.ma_mid),
+        "ma_long": ind.sma(closes, config.ma_long),
     }
 
 

@@ -49,3 +49,30 @@ def test_signup_login_profile_flow(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert r.json()["ready"] is False
     assert r.json()["items"] == []
+
+
+def test_signal_chart_no_data(tmp_path, monkeypatch):
+    client = _fresh_client(tmp_path, monkeypatch)
+    client.post("/api/auth/signup", json={"email": "c@b.com", "pw": "abcdef"})
+    r = client.get("/api/signals/005930/chart")
+    assert r.status_code == 200
+    assert r.json() == {"ready": False, "dates": []}
+
+
+def test_signal_chart_with_data(tmp_path, monkeypatch):
+    client = _fresh_client(tmp_path, monkeypatch)
+    client.post("/api/auth/signup", json={"email": "d@b.com", "pw": "abcdef"})
+
+    from signal_desk import api as api_module
+    history = [{"date": f"2026-01-{i:02d}", "close": 100.0 + i} for i in range(1, 26)]
+    monkeypatch.setattr(api_module.store, "load_price_history", lambda ticker: history)
+
+    r = client.get("/api/signals/005930/chart")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["ready"] is True
+    assert d["dates"] == [h["date"] for h in history]
+    assert d["close"] == [h["close"] for h in history]
+    assert len(d["ma20"]) == len(history)
+    assert len(d["rsi"]) == len(history)
+    assert "macd" in d and "macd_signal" in d and "macd_hist" in d

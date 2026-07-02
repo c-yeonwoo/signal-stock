@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from signal_desk import auth, config, db, store
 from signal_desk.signals import valuation
-from signal_desk.signals.engine import backtest_summary, evaluate
+from signal_desk.signals.engine import backtest_summary, compute_indicator_series, evaluate
 
 config.load_env()
 
@@ -143,6 +143,29 @@ def backtest_get():
     if not store.is_ready():
         return {"ready": False}
     return {"ready": True, **_backtest()}
+
+
+@app.get("/api/signals/{ticker}/chart")
+def signal_chart_get(ticker: str):
+    """종목 가격+지표 시계열(차트용) — 종가/MA20·60·120/RSI/MACD."""
+    history = store.load_price_history(ticker)
+    if not history:
+        return {"ready": False, "dates": []}
+    closes = [h["close"] for h in history]
+    series = compute_indicator_series(closes)
+    return {
+        "ready": True,
+        "ticker": ticker,
+        "dates": [h["date"] for h in history],
+        "close": closes,
+        "ma20": series["ma_short"],
+        "ma60": series["ma_mid"],
+        "ma120": series["ma_long"],
+        "rsi": series["rsi"],
+        "macd": series["macd"]["macd"],
+        "macd_signal": series["macd"]["signal"],
+        "macd_hist": series["macd"]["histogram"],
+    }
 
 
 @app.post("/api/refresh")
