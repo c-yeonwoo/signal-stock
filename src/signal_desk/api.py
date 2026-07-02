@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from functools import lru_cache
 from pathlib import Path
@@ -14,7 +16,7 @@ from pathlib import Path
 from fastapi import Body, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from signal_desk import auth, config, db, store
+from signal_desk import auth, bot, config, db, store
 from signal_desk.signals import valuation
 from signal_desk.signals.engine import backtest_summary, compute_indicator_series, evaluate, signal_zones
 
@@ -33,7 +35,29 @@ def _uid(request: Request):
     return u["id"] if u else None
 
 
-app = FastAPI(title="signal-desk")
+async def _bot_loop():
+    """자동매매봇 백그라운드 루프 — apt-signal의 자동갱신 루프와 같은 패턴(최초 도입).
+    bot_config.enabled가 False면 조용히 skip(기본값 OFF — 사용자가 명시적으로 켜야 실행)."""
+    interval = config.bot_run_interval_minutes() * 60
+    while True:
+        try:
+            if db.bot_config_get()["enabled"]:
+                result = bot.run_once()
+                if not result.get("ok"):
+                    log.info("자동매매봇 실행 스킵: %s", result.get("reason"))
+        except Exception as e:
+            log.error("자동매매봇 루프 오류: %s", e)
+        await asyncio.sleep(interval)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    task = asyncio.create_task(_bot_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="signal-desk", lifespan=_lifespan)
 
 
 @app.middleware("http")
@@ -189,6 +213,24 @@ def valuation_get():
     if not store.is_ready():
         return {"ready": False, "items": []}
     return {"ready": True, "items": _valuation()}
+
+
+# ---------- 자동매매봇 (BACKLOG #7, KIS 모의투자) ----------
+@app.get("/api/bot/state")
+def bot_state_get():
+    return bot.get_state()
+
+
+@app.post("/api/bot/toggle")
+def bot_toggle(data: dict = Body(...)):
+    bot.set_enabled(bool(data.get("enabled")))
+    return {"ok": True, "enabled": bool(data.get("enabled"))}
+
+
+@app.post("/api/bot/run")
+def bot_run():
+    """수동 1회 실행 — 장 시간 무관(force=True), 테스트/데모용."""
+    return bot.run_once(force=True)
 
 
 # ---------- 탭 스텁 (다음 단계에서 실데이터로 교체) ----------

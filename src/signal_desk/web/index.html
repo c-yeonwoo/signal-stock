@@ -37,8 +37,21 @@
           background:var(--panel); color:var(--dim); font-size:11px; user-select:none; }
   .chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
   main { max-width:1240px; margin:0 auto; padding:28px 18px 60px; }
+  /* 워크스페이스형 페이지(차트+리스트 등)는 main의 1240px 제한을 풀블리드로 벗어남 */
+  .bleed { width:96vw; max-width:1720px; margin-left:calc(50% - 48vw); }
   .split { display:flex; gap:16px; align-items:flex-start; }
   .split > .card { flex:1 1 50%; min-width:0; }
+  .card-row { display:flex; gap:16px; margin-bottom:16px; }
+  .card-row > .card { flex:1 1 0; min-width:0; }
+  .stat-label { color:var(--dim); font-size:12px; margin-bottom:4px; }
+  .stat-value { font-size:22px; font-weight:700; }
+  .stat-value.pos { color:var(--sig-buy); }
+  .stat-value.neg { color:var(--sig-sell); }
+  .seg-toggle { display:inline-flex; border:1px solid var(--line); border-radius:var(--r-md);
+    overflow:hidden; margin-bottom:16px; }
+  .seg-toggle button { border:none; background:var(--panel); color:var(--dim); padding:8px 16px;
+    font-size:13px; font-weight:600; cursor:pointer; }
+  .seg-toggle button.on { background:var(--accent); color:#fff; }
   #signal-list-pane { max-height:760px; overflow-y:auto; overflow-x:auto; }
   table.dtable tr.selected-row { background:var(--accent-weak); }
   .card { border:1px solid var(--line); border-radius:var(--r-lg); background:var(--panel); padding:20px; }
@@ -94,7 +107,7 @@
     <button class="tab" data-tab="signal" onclick="switchTab('signal')">시그널</button>
     <button class="tab" data-tab="valuation" onclick="switchTab('valuation')">저평가</button>
     <button class="tab" data-tab="candidates" onclick="switchTab('candidates')">후보</button>
-    <button class="tab" data-tab="watchlist" onclick="switchTab('watchlist')">관심·비교</button>
+    <button class="tab" data-tab="portfolio" onclick="switchTab('portfolio')">포트폴리오</button>
     <button class="tab" data-tab="report" onclick="switchTab('report')">AI리포트</button>
   </div>
   <div class="right">
@@ -108,7 +121,7 @@
     <h2 class="page-head">시그널</h2>
     <p class="page-desc">시장 국면 + 종목/섹터 매수·매도 시그널. 백테스트 성적표로 적중률을 검증합니다.
       왼쪽 목록에서 종목을 클릭하면 오른쪽에 가격·RSI·MACD 차트와 해설이 표시됩니다.</p>
-    <div class="split">
+    <div class="split bleed">
       <div class="card" id="signal-list-pane"><div id="signal-body" class="placeholder">불러오는 중…</div></div>
       <div class="card" id="signal-chart-pane">
         <div id="signal-chart-title" style="font-weight:700;font-size:15px;margin-bottom:8px">종목을 선택하세요</div>
@@ -132,16 +145,53 @@
     <div class="card"><div id="candidates-body" class="placeholder">불러오는 중…</div></div>
   </div>
 
-  <div id="view-watchlist" style="display:none">
-    <h2 class="page-head">관심·비교</h2>
-    <p class="page-desc">관심 종목을 등록하면 시그널·비교·AI 리포트가 이 목록을 기준으로 동작합니다.</p>
-    <div class="card">
-      <div class="row" style="margin-bottom:14px">
-        <input id="wl_ticker" type="text" placeholder="종목코드 또는 티커 (예: 005930)" class="ctrl">
-        <input id="wl_label" type="text" placeholder="메모(선택)" class="ctrl">
-        <button class="btn primary" onclick="addWatch()">추가</button>
+  <div id="view-portfolio" style="display:none">
+    <h2 class="page-head">포트폴리오</h2>
+    <p class="page-desc">시그널 기반 자동매매(KIS 모의투자)와 관심종목을 한 곳에서 관리합니다.</p>
+    <div class="seg-toggle">
+      <button class="on" id="seg-bot-btn" onclick="switchPortfolioSegment('bot')">자동매매</button>
+      <button id="seg-watch-btn" onclick="switchPortfolioSegment('watch')">관심종목</button>
+    </div>
+
+    <div id="portfolio-bot">
+      <div class="card-row bleed">
+        <div class="card"><div class="stat-label">현금</div><div class="stat-value" id="bot-cash">-</div></div>
+        <div class="card"><div class="stat-label">총평가금액</div><div class="stat-value" id="bot-total">-</div></div>
+        <div class="card"><div class="stat-label">총손익률</div><div class="stat-value" id="bot-pl">-</div></div>
+        <div class="card"><div class="stat-label">보유종목수</div><div class="stat-value" id="bot-count">-</div></div>
       </div>
-      <ul class="watchlist" id="watchlist-body"></ul>
+      <div class="card bleed" style="margin-bottom:16px">
+        <div class="row">
+          <span class="stat-label" style="margin:0">봇 상태:</span>
+          <span id="bot-status-label" style="font-weight:700">-</span>
+          <button class="btn primary" id="bot-toggle-btn" onclick="toggleBot()">켜기</button>
+          <button class="btn" onclick="runBotNow()">지금 실행(테스트)</button>
+          <span class="stat-label" id="bot-kis-status" style="margin-left:auto"></span>
+        </div>
+      </div>
+      <div class="split bleed">
+        <div class="card">
+          <b style="font-size:14px">보유종목</b>
+          <div id="bot-holdings-body" class="placeholder" style="padding:16px 0">불러오는 중…</div>
+          <b style="font-size:14px;display:block;margin-top:18px">최근 거래내역</b>
+          <div id="bot-trades-body" class="placeholder" style="padding:16px 0">불러오는 중…</div>
+        </div>
+        <div class="card">
+          <b style="font-size:14px">배분 현황</b>
+          <div id="bot-allocation-chart" style="height:360px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="portfolio-watch" style="display:none">
+      <div class="card">
+        <div class="row" style="margin-bottom:14px">
+          <input id="wl_ticker" type="text" placeholder="종목코드 또는 티커 (예: 005930)" class="ctrl">
+          <input id="wl_label" type="text" placeholder="메모(선택)" class="ctrl">
+          <button class="btn primary" onclick="addWatch()">추가</button>
+        </div>
+        <ul class="watchlist" id="watchlist-body"></ul>
+      </div>
     </div>
   </div>
 
@@ -240,8 +290,9 @@
 </dialog>
 
 <script>
-const _ROUTES = ['signal','valuation','candidates','watchlist','report','mypage'];
+const _ROUTES = ['signal','valuation','candidates','portfolio','report','mypage'];
 let _userEmail = '', _profile = {};
+let _portfolioSegment = 'bot';
 
 function switchTab(t){
   if(!_ROUTES.includes(t)) t = 'signal';
@@ -250,9 +301,19 @@ function switchTab(t){
   if (t === 'signal') loadSignals();
   if (t === 'valuation') loadValuation();
   if (t === 'candidates') loadStub('candidates', '/api/candidates/all');
-  if (t === 'watchlist') loadWatchlist();
+  if (t === 'portfolio') switchPortfolioSegment(_portfolioSegment);
   if (t === 'mypage') fillMyPage();
   if (location.hash.slice(1) !== t) history.replaceState(null, '', '#' + t);
+}
+
+function switchPortfolioSegment(seg){
+  _portfolioSegment = seg;
+  document.getElementById('seg-bot-btn').classList.toggle('on', seg === 'bot');
+  document.getElementById('seg-watch-btn').classList.toggle('on', seg === 'watch');
+  document.getElementById('portfolio-bot').style.display = seg === 'bot' ? '' : 'none';
+  document.getElementById('portfolio-watch').style.display = seg === 'watch' ? '' : 'none';
+  if (seg === 'bot') loadBotState();
+  if (seg === 'watch') loadWatchlist();
 }
 
 function routeFromHash(){
@@ -408,6 +469,98 @@ async function loadValuation(){
     </tr></thead><tbody>${rows}</tbody></table>`;
   } catch (e) {
     el.textContent = '불러오지 못했습니다.';
+  }
+}
+
+// ===== 포트폴리오 — 자동매매봇 =====
+let _botChart = null;
+const _REASON_LABEL = { STOP_LOSS: '손절', TAKE_PROFIT: '익절', TRAILING: '트레일링', SIGNAL: '시그널' };
+
+async function loadBotState(){
+  try {
+    const d = await (await fetch('/api/bot/state')).json();
+    document.getElementById('bot-cash').textContent = d.cash == null ? '-' : Math.round(d.cash).toLocaleString() + '원';
+    document.getElementById('bot-total').textContent = d.total_eval == null ? '-' : Math.round(d.total_eval).toLocaleString() + '원';
+    document.getElementById('bot-count').textContent = d.positions.length;
+
+    const investedCost = d.positions.reduce((s, p) => s + p.qty * p.avg_price, 0);
+    const investedValue = d.total_eval != null && d.cash != null ? d.total_eval - d.cash : null;
+    const plEl = document.getElementById('bot-pl');
+    if (investedValue != null && investedCost > 0) {
+      const plPct = (investedValue / investedCost - 1) * 100;
+      plEl.textContent = (plPct >= 0 ? '+' : '') + plPct.toFixed(2) + '%';
+      plEl.className = 'stat-value ' + (plPct >= 0 ? 'pos' : 'neg');
+    } else {
+      plEl.textContent = '-'; plEl.className = 'stat-value';
+    }
+
+    document.getElementById('bot-status-label').textContent = d.enabled ? '실행 중' : '꺼짐';
+    document.getElementById('bot-toggle-btn').textContent = d.enabled ? '끄기' : '켜기';
+    document.getElementById('bot-kis-status').textContent = d.kis_connected ? 'KIS 연결됨' : 'KIS 연결 안 됨(.env 확인)';
+
+    const hEl = document.getElementById('bot-holdings-body');
+    if (!d.positions.length) {
+      hEl.className = 'placeholder'; hEl.textContent = '보유종목이 없습니다.';
+    } else {
+      hEl.className = '';
+      const rows = d.positions.map(p => {
+        const pl = p.avg_price > 0 ? ((p.peak_price ?? p.avg_price) / p.avg_price - 1) * 100 : 0;
+        return `<tr><td>${esc(p.name)}<div style="color:var(--dim);font-size:11px">${esc(p.ticker)}</div></td>
+          <td class="num">${p.qty}</td><td class="num">${fmtNum(p.avg_price, 0)}</td>
+          <td class="num">${fmtNum(p.peak_price, 0)}</td></tr>`;
+      }).join('');
+      hEl.innerHTML = `<table class="dtable"><thead><tr>
+        <th>종목</th><th class="num">수량</th><th class="num">평단가</th><th class="num">진입후고점</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    const tEl = document.getElementById('bot-trades-body');
+    if (!d.recent_trades.length) {
+      tEl.className = 'placeholder'; tEl.textContent = '거래내역이 없습니다.';
+    } else {
+      tEl.className = '';
+      const rows = d.recent_trades.map(t => `<tr>
+        <td>${new Date(t.ts * 1000).toLocaleString('ko-KR')}</td>
+        <td>${esc(t.name)}</td>
+        <td><span class="sig-pill ${t.side === 'buy' ? 'BUY' : 'SELL'}">${t.side === 'buy' ? '매수' : '매도'}</span></td>
+        <td class="num">${t.qty}</td><td class="num">${fmtNum(t.price, 0)}</td>
+        <td>${_REASON_LABEL[t.reason] || t.reason}</td>
+      </tr>`).join('');
+      tEl.innerHTML = `<table class="dtable"><thead><tr>
+        <th>시각</th><th>종목</th><th>구분</th><th class="num">수량</th><th class="num">가격</th><th>사유</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    const chartHolder = document.getElementById('bot-allocation-chart');
+    if (!_botChart) _botChart = echarts.init(chartHolder);
+    const pieData = d.positions.map(p => ({ name: p.name, value: Math.round(p.qty * p.avg_price) }));
+    if (d.cash) pieData.push({ name: '현금', value: Math.round(d.cash) });
+    _botChart.setOption({
+      tooltip: { trigger: 'item', formatter: '{b}: {c}원 ({d}%)' },
+      series: [{ type: 'pie', radius: ['45%', '70%'], data: pieData,
+        label: { fontSize: 11 }, itemStyle: { borderColor: '#fff', borderWidth: 2 } }],
+    }, true);
+    _botChart.resize();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function toggleBot(){
+  const d = await (await fetch('/api/bot/state')).json();
+  await fetch('/api/bot/toggle', { method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ enabled: !d.enabled }) });
+  loadBotState();
+}
+
+async function runBotNow(){
+  const btn = event.target; btn.disabled = true; btn.textContent = '실행 중…';
+  try {
+    const d = await (await fetch('/api/bot/run', { method: 'POST' })).json();
+    alert(d.ok ? `실행 완료 — 매수 ${d.buys.length}건, 매도 ${d.sells.length}건` : `실행 안 됨: ${d.reason}`);
+    loadBotState();
+  } finally {
+    btn.disabled = false; btn.textContent = '지금 실행(테스트)';
   }
 }
 

@@ -50,7 +50,9 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 - [x] 리스크 엔진(BACKLOG #8) — `signals/risk.py`, stop-loss/take-profit/trailing 순수 함수
   (포지션 모델은 #7 자동매매봇과 함께 올 예정)
 - [x] KIS 모의투자 연동 — `broker/kis.py`(인증 토큰 캐시·잔고조회·주문실행) 실키 검증(잔고 1억원 확인)
-- [ ] 자동매매봇(#7) 나머지 — 시그널→주문 자동 루프, 포지션 추적, #8 리스크 엔진 연결
+- [x] 자동매매봇(BACKLOG #7) — `bot.py`(리스크→시그널 청산 우선순위, 동일가중 사이징, KIS 잔고
+  재대사), FastAPI lifespan 백그라운드 루프(기본 OFF), `/api/bot/*`. **포트폴리오 탭**(관심·비교
+  탭을 개편, 자동매매/관심종목 세그먼트)에서 현금·손익·보유종목·배분차트·거래내역 확인
 - [ ] 시장 국면 + 매크로 미니차트(#5·#6), phase2 나머지 — [BACKLOG.md](BACKLOG.md) 참고
 
 다음에 붙일 기능의 상세 우선순위·범위·의존관계는 [BACKLOG.md](BACKLOG.md) 참고.

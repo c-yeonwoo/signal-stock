@@ -51,6 +51,27 @@ def test_signup_login_profile_flow(tmp_path, monkeypatch):
     assert r.json()["items"] == []
 
 
+def test_bot_state_and_toggle(tmp_path, monkeypatch):
+    client = _fresh_client(tmp_path, monkeypatch)
+    client.post("/api/auth/signup", json={"email": "bot@b.com", "pw": "abcdef"})
+
+    r = client.get("/api/bot/state")
+    assert r.status_code == 200
+    assert r.json()["enabled"] is False  # 기본값 OFF
+
+    r = client.post("/api/bot/toggle", json={"enabled": True})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert client.get("/api/bot/state").json()["enabled"] is True
+
+
+def test_bot_manual_run_reports_reason_when_not_configured(tmp_path, monkeypatch):
+    client = _fresh_client(tmp_path, monkeypatch)
+    client.post("/api/auth/signup", json={"email": "e@b.com", "pw": "abcdef"})
+    r = client.post("/api/bot/run")
+    assert r.status_code == 200
+    assert r.json()["ok"] is False  # KIS 키 없는 테스트 환경이라 정상적으로 실패 사유 반환
+
+
 def test_signal_chart_no_data(tmp_path, monkeypatch):
     client = _fresh_client(tmp_path, monkeypatch)
     client.post("/api/auth/signup", json={"email": "c@b.com", "pw": "abcdef"})

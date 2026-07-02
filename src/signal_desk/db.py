@@ -21,6 +21,13 @@ CREATE TABLE IF NOT EXISTS profile(uid INTEGER PRIMARY KEY, data TEXT);
 CREATE TABLE IF NOT EXISTS favorites(uid INTEGER, kind TEXT, key TEXT, label TEXT, ts INTEGER,
     PRIMARY KEY(uid, kind, key));
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT, ts INTEGER);
+CREATE TABLE IF NOT EXISTS bot_config(id INTEGER PRIMARY KEY CHECK (id=1),
+    enabled INTEGER NOT NULL DEFAULT 0, max_positions INTEGER NOT NULL DEFAULT 10,
+    position_pct REAL NOT NULL DEFAULT 0.08, updated INTEGER);
+CREATE TABLE IF NOT EXISTS bot_positions(ticker TEXT PRIMARY KEY, name TEXT, qty INTEGER,
+    avg_price REAL, peak_price REAL, entry_date TEXT, updated INTEGER);
+CREATE TABLE IF NOT EXISTS bot_trades(id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT, name TEXT,
+    side TEXT, qty INTEGER, price REAL, reason TEXT, order_no TEXT, ts INTEGER);
 """
 
 
@@ -134,3 +141,78 @@ def kv_set(k: str, v) -> None:
               (k, json.dumps(v, ensure_ascii=False), int(time.time())))
     c.commit()
     c.close()
+
+
+# ---------- bot_config (서비스 전체 공유하는 단일 데모 계좌 — uid 스코프 없음) ----------
+def bot_config_get() -> dict:
+    c = conn()
+    c.execute("INSERT OR IGNORE INTO bot_config(id,enabled,max_positions,position_pct,updated) "
+              "VALUES(1,0,10,0.08,?)", (int(time.time()),))
+    c.commit()
+    row = c.execute("SELECT enabled,max_positions,position_pct,updated FROM bot_config WHERE id=1").fetchone()
+    c.close()
+    return {"enabled": bool(row[0]), "max_positions": row[1], "position_pct": row[2], "updated": row[3]}
+
+
+def bot_config_set_enabled(enabled: bool) -> None:
+    c = conn()
+    c.execute("INSERT OR IGNORE INTO bot_config(id,enabled,max_positions,position_pct,updated) "
+              "VALUES(1,0,10,0.08,?)", (int(time.time()),))
+    c.execute("UPDATE bot_config SET enabled=?, updated=? WHERE id=1", (int(enabled), int(time.time())))
+    c.commit()
+    c.close()
+
+
+# ---------- bot_positions ----------
+def bot_positions_all() -> list[dict]:
+    c = conn()
+    rows = c.execute("SELECT ticker,name,qty,avg_price,peak_price,entry_date FROM bot_positions").fetchall()
+    c.close()
+    return [{"ticker": t, "name": n, "qty": q, "avg_price": ap, "peak_price": pk, "entry_date": ed}
+            for t, n, q, ap, pk, ed in rows]
+
+
+def bot_position_get(ticker: str) -> dict | None:
+    c = conn()
+    row = c.execute("SELECT ticker,name,qty,avg_price,peak_price,entry_date FROM bot_positions "
+                     "WHERE ticker=?", (ticker,)).fetchone()
+    c.close()
+    if not row:
+        return None
+    t, n, q, ap, pk, ed = row
+    return {"ticker": t, "name": n, "qty": q, "avg_price": ap, "peak_price": pk, "entry_date": ed}
+
+
+def bot_position_upsert(ticker: str, name: str, qty: int, avg_price: float, peak_price: float,
+                         entry_date: str) -> None:
+    c = conn()
+    c.execute("INSERT OR REPLACE INTO bot_positions(ticker,name,qty,avg_price,peak_price,entry_date,updated) "
+              "VALUES(?,?,?,?,?,?,?)", (ticker, name, qty, avg_price, peak_price, entry_date, int(time.time())))
+    c.commit()
+    c.close()
+
+
+def bot_position_delete(ticker: str) -> None:
+    c = conn()
+    c.execute("DELETE FROM bot_positions WHERE ticker=?", (ticker,))
+    c.commit()
+    c.close()
+
+
+# ---------- bot_trades ----------
+def bot_trade_log(ticker: str, name: str, side: str, qty: int, price: float, reason: str,
+                   order_no: str | None) -> None:
+    c = conn()
+    c.execute("INSERT INTO bot_trades(ticker,name,side,qty,price,reason,order_no,ts) "
+              "VALUES(?,?,?,?,?,?,?,?)", (ticker, name, side, qty, price, reason, order_no, int(time.time())))
+    c.commit()
+    c.close()
+
+
+def bot_trades_recent(limit: int = 20) -> list[dict]:
+    c = conn()
+    rows = c.execute("SELECT ticker,name,side,qty,price,reason,order_no,ts FROM bot_trades "
+                      "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    c.close()
+    return [{"ticker": t, "name": n, "side": s, "qty": q, "price": p, "reason": r, "order_no": o, "ts": ts}
+            for t, n, s, q, p, r, o, ts in rows]
