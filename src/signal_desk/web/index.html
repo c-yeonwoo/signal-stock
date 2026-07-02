@@ -110,15 +110,25 @@
   .vc-sectors button { padding:7px 15px; border:1px solid var(--line); border-radius:999px;
     background:var(--panel); color:var(--dim); font-size:13px; font-weight:600; cursor:pointer; }
   .vc-sectors button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
-  .vc-stages { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:16px; }
-  .vc-stage { border:1px solid var(--line); border-radius:var(--r-md); padding:16px; background:var(--panel); }
-  .vc-stage h4 { margin:0 0 4px; font-size:14px; }
-  .vc-stage .st-desc { font-size:12px; color:var(--dim); margin-bottom:12px; line-height:1.5; }
-  .vc-grp-label { font-size:11px; color:var(--dim); font-weight:700; margin:10px 0 6px; }
-  .vc-co { display:inline-block; padding:4px 10px; margin:0 5px 6px 0; border:1px solid var(--line);
-    border-radius:8px; font-size:12px; background:var(--bg); }
-  .vc-co.link { cursor:pointer; color:var(--accent); border-color:var(--ring); }
-  .vc-co.link:hover { background:var(--accent-weak); }
+  /* 타임라인/마인드맵: 가로 스파인(왼→오) + 각 단계 허브에서 위아래로 기업 노드 브랜치 */
+  .vc-flow { position:relative; overflow-x:auto; padding:6px 2px; }
+  .vc-spine { position:absolute; left:3%; right:3%; top:50%; height:2px; background:var(--line); z-index:0; }
+  .vc-cols { display:flex; align-items:stretch; min-width:min-content; }
+  .vc-col { position:relative; flex:1 1 0; min-width:190px; display:flex; flex-direction:column; padding:0 10px; }
+  .vc-col::before { content:''; position:absolute; left:50%; top:9%; bottom:9%; width:2px;
+    background:var(--line); transform:translateX(-1px); z-index:0; }
+  .vc-chips { display:flex; flex-direction:column; align-items:center; gap:7px; position:relative; z-index:2; }
+  .vc-chips.top { flex:1; justify-content:flex-end; padding-bottom:12px; }
+  .vc-chips.bot { flex:1; justify-content:flex-start; padding-top:12px; }
+  .vc-hub { flex:0 0 auto; align-self:center; background:var(--accent); color:#fff; border-radius:12px;
+    padding:9px 13px; text-align:center; min-width:120px; max-width:190px; box-shadow:var(--shadow); z-index:2; }
+  .vc-hub .hub-name { font-weight:700; font-size:13px; }
+  .vc-hub .hub-desc { font-size:11px; opacity:.92; margin-top:3px; line-height:1.45; }
+  .vc-node { border:1px solid var(--line); border-radius:8px; padding:4px 10px; font-size:12px;
+    background:var(--panel); white-space:nowrap; }
+  .vc-node.kr { color:var(--sig-buy); border-color:var(--ring); cursor:pointer; font-weight:600; }
+  .vc-node.kr:hover { background:var(--accent-weak); }
+  .vc-node.ov { color:var(--dim); }
   .card { border:1px solid var(--line); border-radius:var(--r-lg); background:var(--panel); padding:20px; }
   .card:hover { box-shadow:var(--shadow); }
   .placeholder { color:var(--dim); font-size:13px; padding:32px 0; text-align:center; }
@@ -412,7 +422,6 @@ window.addEventListener('resize', () => {
   if (_signalChart) _signalChart.resize();
   if (_botChart) _botChart.resize();
   if (_cycleChart) _cycleChart.resize();
-  if (_vcChart) _vcChart.resize();
 });
 
 function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -521,57 +530,39 @@ async function loadValuechain(){
   selectVcSector(_vcCurrent || _vcData[0].key);
 }
 
-let _vcChart = null;
 function selectVcSector(key){
   _vcCurrent = key;
   document.querySelectorAll('#vc-sectors button').forEach(b => b.classList.toggle('on', b.dataset.k === key));
   const s = _vcData.find(x => x.key === key);
   if (!s) return;
   document.getElementById('vc-detail').innerHTML =
-    `<p class="page-desc" style="margin:0 0 8px"><b>${esc(s.name)}</b>${s.gics ? ` <span class="sector-chip">${esc(s.gics)}</span>` : ''} · ${esc(s.summary)}</p>
-     <div id="vc-diagram" style="width:100%"></div>
-     <div style="font-size:11px;color:var(--dim);margin-top:6px">
-       <span style="color:var(--sig-buy);font-weight:700">● 국내(코스피)</span> 클릭 시 시그널 이동 ·
-       <span style="color:var(--sig-neutral);font-weight:700">● 해외</span> · 왼쪽 업스트림 → 오른쪽 다운스트림</div>`;
+    `<p class="page-desc" style="margin:0 0 10px"><b>${esc(s.name)}</b>${s.gics ? ` <span class="sector-chip">${esc(s.gics)}</span>` : ''} · ${esc(s.summary)}</p>
+     <div id="vc-diagram"></div>
+     <div style="font-size:11px;color:var(--dim);margin-top:8px">
+       왼쪽 → 오른쪽: 원자재·소재에서 최종 제품·수요로 이어지는 흐름 ·
+       <span style="color:var(--sig-buy);font-weight:700">위 = 국내(코스피, 클릭 시 시그널)</span> ·
+       <span style="color:var(--dim);font-weight:700">아래 = 해외</span></div>`;
   drawVcDiagram(s);
 }
 
 function drawVcDiagram(s){
   const holder = document.getElementById('vc-diagram');
-  const leaves = s.stages.reduce((a, st) => a + st.domestic.length + st.overseas.length, 0);
-  holder.style.height = Math.min(880, Math.max(340, leaves * 27)) + 'px';
-  if (_vcChart) _vcChart.dispose();
-  _vcChart = echarts.init(holder);
+  const maxSide = Math.max(1, ...s.stages.map(st => Math.max(st.domestic.length, st.overseas.length)));
+  const h = Math.min(760, 200 + maxSide * 70);
   const isKr = (c) => c.ticker && /^\d{6}$/.test(c.ticker);
-  const co = (c) => ({
-    name: c.name, _ticker: isKr(c) ? c.ticker : null,
-    symbolSize: 9, itemStyle: { color: isKr(c) ? '#16a34a' : '#94a3b8' },
-    label: { color: '#1e293b', fontSize: 11 },
-    tooltip: { formatter: `${esc(c.name)}${c.ticker ? ' · ' + esc(c.ticker) : ''}${isKr(c) ? ' · 클릭하면 시그널' : ''}` },
-  });
-  const root = {
-    name: s.name, symbolSize: 20, itemStyle: { color: '#4f46e5' },
-    label: { color: '#4f46e5', fontWeight: 700, fontSize: 13 },
-    children: s.stages.map(st => ({
-      name: st.stage.replace(' · ', '\n'), symbolSize: 15, itemStyle: { color: '#334155' },
-      label: { color: '#334155', fontWeight: 600, fontSize: 11 },
-      children: [...st.domestic.map(co), ...st.overseas.map(co)],
-    })),
-  };
-  _vcChart.setOption({
-    tooltip: { trigger: 'item' },
-    series: [{
-      type: 'tree', data: [root], top: 12, bottom: 12, left: '14%', right: '18%',
-      orient: 'LR', edgeShape: 'curve', symbol: 'circle', expandAndCollapse: false,
-      label: { position: 'left', align: 'right', fontSize: 11 },
-      leaves: { label: { position: 'right', align: 'left' } },
-      lineStyle: { color: '#cbd5e1', width: 1.2, curveness: 0.5 },
-      initialTreeDepth: -1, animationDuration: 450,
-    }],
-  }, true);
-  _vcChart.off('click');
-  _vcChart.on('click', (p) => { if (p.data && p.data._ticker) gotoSignal(p.data._ticker); });
-  _vcChart.resize();
+  const chip = (c) => isKr(c)
+    ? `<span class="vc-node kr" onclick="gotoSignal('${c.ticker}')" title="${esc(c.name)} ${esc(c.ticker)} · 클릭 시 시그널">${esc(c.name)}</span>`
+    : `<span class="vc-node ov" title="${esc(c.name)}${c.ticker ? ' · ' + esc(c.ticker) : ''}">${esc(c.name)}</span>`;
+  const cols = s.stages.map(st => {
+    const role = st.stage.split(' · ')[1] || st.stage;  // '업스트림/미드/다운' 키워드 제거, 역할명만
+    return `<div class="vc-col">
+      <div class="vc-chips top">${st.domestic.map(chip).join('')}</div>
+      <div class="vc-hub"><div class="hub-name">${esc(role)}</div><div class="hub-desc">${esc(st.desc || '')}</div></div>
+      <div class="vc-chips bot">${st.overseas.map(chip).join('')}</div>
+    </div>`;
+  }).join('');
+  holder.innerHTML = `<div class="vc-flow" style="min-height:${h}px">
+    <div class="vc-spine"></div><div class="vc-cols">${cols}</div></div>`;
 }
 
 async function loadRegime(){
