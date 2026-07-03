@@ -265,6 +265,7 @@ def signals_get():
         return {"ready": False, "items": [], "message": "아직 수집된 데이터가 없습니다. /api/refresh를 먼저 호출하세요."}
     items = []
     quotes = _quotes()
+    fundamentals = store.load_fundamentals()
     for r in _signals():
         d = asdict(r)
         q = quotes.get(r.ticker) or {}
@@ -273,6 +274,9 @@ def signals_get():
         d["mktcap"] = q.get("mktcap")  # 시가총액(정렬·표기용)
         d["vol"] = q.get("vol")
         d["vol_avg"] = q.get("vol_avg")  # 최근 20일 평균 거래량
+        f = fundamentals.get(r.ticker) or {}  # 저평가 팩터 근거(PER/PBR) — 탭 대신 시그널 상세에 표시
+        d["per"] = f.get("per")
+        d["pbr"] = f.get("pbr")
         pos = valuechain.company_position(r.ticker)  # 밸류체인 큐레이션에서 소개 재활용
         d["sector"] = sectors.sector_of(r.ticker)  # 세분 섹터(조선·철강·화장품·로봇 등) 200종목 매핑
         d["intro"] = f"{pos['sector']} 밸류체인 · {pos['stage']}" if pos else None
