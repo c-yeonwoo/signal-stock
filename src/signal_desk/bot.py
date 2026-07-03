@@ -216,8 +216,8 @@ def run_once(dry_run: bool = False) -> dict:
     skipped_weak = 0
     advisor_used = False
     if slots > 0:
-        # min_buy_score 이상인 강한 BUY만 후보 — 약한 BUY는 매수하지 않음
-        eligible = [s for s in signals if engine.is_buy(s.kind) and s.ticker not in held_after]
+        # min_buy_score 이상인 강한 BUY만 후보 — 약한 BUY는 매수하지 않음. 최근 악재(event_risk)는 제외
+        eligible = [s for s in signals if engine.is_buy(s.kind) and s.ticker not in held_after and not s.event_risk]
         strong = [s for s in eligible if s.score >= cfg["min_buy_score"]]
         skipped_weak = len(eligible) - len(strong)
         pool = sorted(strong, key=lambda s: s.score, reverse=True)[:max(slots * 3, 6)]
@@ -303,7 +303,8 @@ def generate_reservations(dry_run: bool = False) -> dict:
     slots = min(max(0, cfg["max_positions"] - len(held)), cfg["max_new_buys_per_run"])
     context = _market_context(prices)
 
-    strong = [s for s in signals if engine.is_buy(s.kind) and s.score >= cfg["min_buy_score"] and s.ticker not in held]
+    strong = [s for s in signals if engine.is_buy(s.kind) and s.score >= cfg["min_buy_score"]
+              and s.ticker not in held and not s.event_risk]
     pool = sorted(strong, key=lambda s: s.score, reverse=True)[:max(slots * 3, 6)]
     pool_by = {s.ticker: s for s in pool}
     picks = advisor.select_buys(

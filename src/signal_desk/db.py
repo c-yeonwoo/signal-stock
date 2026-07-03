@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS bot_trades(id INTEGER PRIMARY KEY AUTOINCREMENT, tick
 CREATE TABLE IF NOT EXISTS kb_entries(id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT, title TEXT,
     summary TEXT, url TEXT UNIQUE, source TEXT, published TEXT, fetched INTEGER);
 CREATE TABLE IF NOT EXISTS kb_digest(ticker TEXT PRIMARY KEY, name TEXT, sentiment REAL, summary TEXT,
-    points TEXT, n_sources INTEGER, updated INTEGER);
+    points TEXT, n_sources INTEGER, updated INTEGER, newest_ts INTEGER,
+    event_flag INTEGER NOT NULL DEFAULT 0, event_note TEXT);
 CREATE TABLE IF NOT EXISTS bot_decisions(id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT, name TEXT,
     action TEXT, score REAL, rationale TEXT, context TEXT, decided_price REAL, ts INTEGER,
     outcome_pct REAL, outcome_ts INTEGER);
@@ -65,6 +66,13 @@ def _migrate(c: sqlite3.Connection) -> None:
         c.execute("ALTER TABLE bot_config ADD COLUMN max_new_buys_per_run INTEGER NOT NULL DEFAULT 2")
     if "trading_style" not in ccols:  # 안정형/균형형/공격형 — 성향별 봇 파라미터 프리셋
         c.execute("ALTER TABLE bot_config ADD COLUMN trading_style TEXT NOT NULL DEFAULT 'balanced'")
+    dcols = {r[1] for r in c.execute("PRAGMA table_info(kb_digest)").fetchall()}
+    if "newest_ts" not in dcols:  # 최신 원자료 발행 시각(신선도 판정용)
+        c.execute("ALTER TABLE kb_digest ADD COLUMN newest_ts INTEGER")
+    if "event_flag" not in dcols:  # 악재 이벤트 감지 여부(매수 후보 veto용)
+        c.execute("ALTER TABLE kb_digest ADD COLUMN event_flag INTEGER NOT NULL DEFAULT 0")
+    if "event_note" not in dcols:
+        c.execute("ALTER TABLE kb_digest ADD COLUMN event_note TEXT")
     c.commit()
 
 
@@ -277,15 +285,20 @@ def bot_trades_recent(limit: int = 20) -> list[dict]:
 
 # ---------- KB (뉴스·영상 가공 지식베이스) ----------
 def kb_entry_add_many(ticker: str, items: list[dict]) -> int:
-    """원자료 엔트리 저장(url UNIQUE로 중복 무시). 저장 건수 반환."""
+    """원자료 엔트리 저장(url UNIQUE + 배치 내 제목 중복 제거). 저장 건수 반환."""
     c = conn()
     added = 0
+    seen_titles: set[str] = set()
     for it in items:
         if not it.get("url"):
             continue
+        title = (it.get("title", "") or "").strip()
+        if title and title in seen_titles:  # 같은 기사 다른 URL(재발행·연합송고) 중복 제거
+            continue
+        seen_titles.add(title)
         cur = c.execute("INSERT OR IGNORE INTO kb_entries(ticker,title,summary,url,source,published,fetched) "
                         "VALUES(?,?,?,?,?,?,?)",
-                        (ticker, it.get("title", ""), it.get("summary", ""), it["url"],
+                        (ticker, title, it.get("summary", ""), it["url"],
                          it.get("source", ""), it.get("published", ""), int(time.time())))
         added += cur.rowcount
     c.commit()
@@ -301,36 +314,43 @@ def kb_entries_recent(ticker: str, limit: int = 12) -> list[dict]:
     return [{"title": t, "summary": s, "url": u, "source": src, "published": p} for t, s, u, src, p in rows]
 
 
-def kb_digest_set(ticker: str, name: str, sentiment: float, summary: str, points: list[str], n_sources: int) -> None:
+def kb_digest_set(ticker: str, name: str, sentiment: float, summary: str, points: list[str],
+                  n_sources: int, newest_ts: int | None = None,
+                  event_flag: bool = False, event_note: str | None = None) -> None:
     c = conn()
-    c.execute("INSERT INTO kb_digest(ticker,name,sentiment,summary,points,n_sources,updated) "
-              "VALUES(?,?,?,?,?,?,?) ON CONFLICT(ticker) DO UPDATE SET "
+    c.execute("INSERT INTO kb_digest(ticker,name,sentiment,summary,points,n_sources,updated,newest_ts,event_flag,event_note) "
+              "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(ticker) DO UPDATE SET "
               "name=excluded.name, sentiment=excluded.sentiment, summary=excluded.summary, "
-              "points=excluded.points, n_sources=excluded.n_sources, updated=excluded.updated",
-              (ticker, name, sentiment, summary, json.dumps(points, ensure_ascii=False), n_sources, int(time.time())))
+              "points=excluded.points, n_sources=excluded.n_sources, updated=excluded.updated, "
+              "newest_ts=excluded.newest_ts, event_flag=excluded.event_flag, event_note=excluded.event_note",
+              (ticker, name, sentiment, summary, json.dumps(points, ensure_ascii=False), n_sources,
+               int(time.time()), newest_ts, 1 if event_flag else 0, event_note))
     c.commit()
     c.close()
 
 
+_KB_COLS = "ticker,name,sentiment,summary,points,n_sources,updated,newest_ts,event_flag,event_note"
+
+
+def _kb_row(row) -> dict:
+    t, n, s, sm, p, ns, up, nts, ef, en = row
+    return {"ticker": t, "name": n, "sentiment": s, "summary": sm,
+            "points": json.loads(p or "[]"), "n_sources": ns, "updated": up,
+            "newest_ts": nts, "event_flag": bool(ef), "event_note": en}
+
+
 def kb_digest_get(ticker: str) -> dict | None:
     c = conn()
-    row = c.execute("SELECT ticker,name,sentiment,summary,points,n_sources,updated FROM kb_digest "
-                    "WHERE ticker=?", (ticker,)).fetchone()
+    row = c.execute(f"SELECT {_KB_COLS} FROM kb_digest WHERE ticker=?", (ticker,)).fetchone()
     c.close()
-    if not row:
-        return None
-    t, n, s, sm, p, ns, up = row
-    return {"ticker": t, "name": n, "sentiment": s, "summary": sm,
-            "points": json.loads(p or "[]"), "n_sources": ns, "updated": up}
+    return _kb_row(row) if row else None
 
 
 def kb_digests_all() -> dict[str, dict]:
     c = conn()
-    rows = c.execute("SELECT ticker,name,sentiment,summary,points,n_sources,updated FROM kb_digest").fetchall()
+    rows = c.execute(f"SELECT {_KB_COLS} FROM kb_digest").fetchall()
     c.close()
-    return {t: {"ticker": t, "name": n, "sentiment": s, "summary": sm,
-                "points": json.loads(p or "[]"), "n_sources": ns, "updated": up}
-            for t, n, s, sm, p, ns, up in rows}
+    return {r[0]: _kb_row(r) for r in rows}
 
 
 # ---------- bot_decisions (의사결정 저널 — 학습용) ----------
