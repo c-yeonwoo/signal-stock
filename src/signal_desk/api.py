@@ -23,7 +23,7 @@ from signal_desk.reference import cycle, sectors, valuechain
 from signal_desk.signals import macro, rebalance, regime, valuation
 from signal_desk.signals.engine import (
     SignalConfig, _price_only_components, backtest_summary, combine,
-    compute_indicator_series, evaluate, signal_zones,
+    compute_indicator_series, evaluate, factor_contribution, signal_zones, walk_forward,
 )
 
 config.load_env()
@@ -206,8 +206,9 @@ def rebalance_post(request: Request):
 # ---------- 시그널 (실데이터, store 캐시 기반) ----------
 @lru_cache(maxsize=1)
 def _signals():
+    cfg, _ = signalcfg.effective_config(_regime(), _macro())  # 약세·비우호 국면이면 매수 기준 자동 상향
     return evaluate(store.load_universe(), store.load_price_series(), store.load_fundamentals(),
-                    config=signalcfg.get_config(), sentiment=kb.sentiment_map())
+                    config=cfg, sentiment=kb.sentiment_map())
 
 
 @lru_cache(maxsize=1)
@@ -216,8 +217,28 @@ def _backtest():
 
 
 @lru_cache(maxsize=1)
+def _backtest_analysis():
+    """point-in-time 재무 반영 요약 + 팩터별 기여도 + 워크포워드 — 관리자 정밀 분석용."""
+    cfg = signalcfg.get_config()
+    prices = store.load_price_series()
+    dates = store.load_dates_by_ticker()
+    hist = store.load_fundamentals_history()
+    return {
+        "pit": backtest_summary(prices, cfg, dates, hist),
+        "factors": factor_contribution(prices, cfg, dates, hist),
+        "walkforward": walk_forward(prices, cfg, dates, hist),
+        "has_pit": bool(hist),
+    }
+
+
+@lru_cache(maxsize=1)
 def _valuation():
     return valuation.screen(store.load_universe(), store.load_fundamentals())
+
+
+@lru_cache(maxsize=1)
+def _quotes():
+    return store.load_quotes()
 
 
 @lru_cache(maxsize=1)
@@ -236,8 +257,15 @@ def signals_get():
     if not store.is_ready():
         return {"ready": False, "items": [], "message": "아직 수집된 데이터가 없습니다. /api/refresh를 먼저 호출하세요."}
     items = []
+    quotes = _quotes()
     for r in _signals():
         d = asdict(r)
+        q = quotes.get(r.ticker) or {}
+        d["price"] = q.get("price")  # 현재가(최신 종가)
+        d["change_pct"] = q.get("change_pct")
+        d["mktcap"] = q.get("mktcap")  # 시가총액(정렬·표기용)
+        d["vol"] = q.get("vol")
+        d["vol_avg"] = q.get("vol_avg")  # 최근 20일 평균 거래량
         pos = valuechain.company_position(r.ticker)  # 밸류체인 큐레이션에서 소개 재활용
         d["sector"] = sectors.sector_of(r.ticker)  # 세분 섹터(조선·철강·화장품·로봇 등) 200종목 매핑
         d["intro"] = f"{pos['sector']} 밸류체인 · {pos['stage']}" if pos else None
@@ -250,10 +278,18 @@ def signals_get():
 
 @app.get("/api/backtest")
 def backtest_get():
-    """시그널 적중률 성적표 — 1차 버전은 기술점수 단독(engine.backtest_summary 참고)."""
+    """시그널 적중률 성적표 — 가격기반(기술+낙폭과대). 정밀 분석은 /api/backtest/analysis."""
     if not store.is_ready():
         return {"ready": False}
     return {"ready": True, **_backtest()}
+
+
+@app.get("/api/backtest/analysis")
+def backtest_analysis_get():
+    """정밀 분석 — point-in-time 재무 반영 성적표 + 팩터별 기여도 + 워크포워드 안정성."""
+    if not store.is_ready():
+        return {"ready": False}
+    return {"ready": True, **_backtest_analysis()}
 
 
 @app.get("/api/signals/{ticker}/chart")
@@ -268,6 +304,7 @@ def signal_chart_get(ticker: str):
     return {
         "ready": True,
         "ticker": ticker,
+        "quote": _quotes().get(ticker),  # 현재가·시총·거래량(차트 헤더 표기)
         "dates": dates,
         "close": closes,
         "ma20": series["ma_short"],
@@ -310,10 +347,13 @@ def refresh():
     universe = store.fetch_universe()
     store.fetch_prices(universe)
     fundamentals = store.fetch_fundamentals(universe)
+    store.fetch_fundamentals_history(universe)  # point-in-time 백테스트용 연도별 재무
     macro_items = store.fetch_macro()
     _signals.cache_clear()
     _backtest.cache_clear()
+    _backtest_analysis.cache_clear()
     _valuation.cache_clear()
+    _quotes.cache_clear()
     _regime.cache_clear()
     _macro.cache_clear()
     return {
@@ -338,7 +378,8 @@ def regime_get():
     """시장 국면(강세·과열·조정·약세) — signals/regime.py 참고. 유니버스 breadth+모멘텀 근사."""
     if not store.is_ready():
         return {"ready": False, "regime": None}
-    return _regime()
+    _, adapt = signalcfg.effective_config(_regime(), _macro())  # 국면 적응으로 상향된 매수 기준
+    return {**_regime(), "adaptive": adapt}
 
 
 # ---------- 자동매매봇 (BACKLOG #7, KIS 모의투자) ----------
@@ -474,6 +515,7 @@ def engine_config_set(data: dict = Body(...)):
     out = signalcfg.set_dict(data)
     _signals.cache_clear()
     _backtest.cache_clear()
+    _backtest_analysis.cache_clear()
     return {"ok": True, "config": out}
 
 
@@ -482,6 +524,7 @@ def engine_config_reset():
     out = signalcfg.reset()
     _signals.cache_clear()
     _backtest.cache_clear()
+    _backtest_analysis.cache_clear()
     return {"ok": True, "config": out}
 
 

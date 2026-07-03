@@ -102,7 +102,16 @@
   .sig-list { flex:0 0 380px; min-width:0; overflow-y:auto; overflow-x:hidden; padding:0; }
   .sig-list table.dtable th, .sig-list table.dtable td { padding:8px 7px; }
   .sig-list table.dtable td:nth-child(2) { white-space:normal; }  /* 긴 종목명은 줄바꿈(가로 스크롤 방지) */
-  .sig-list .dtable th { position:sticky; top:0; background:var(--panel); z-index:1; }
+  .sig-list .dtable th { position:sticky; top:48px; background:var(--panel); z-index:1; }
+  .sig-toolbar { position:sticky; top:0; z-index:3; display:flex; gap:6px; padding:8px;
+    background:var(--panel); border-bottom:1px solid var(--line); }
+  .sig-toolbar #sig-search { flex:1 1 auto; min-width:0; }
+  .sig-toolbar #sig-sort { flex:0 0 auto; }
+  .sig-metric { color:var(--dim); font-size:11px; }
+  .sig-quote { display:flex; gap:7px 14px; flex-wrap:wrap; align-items:baseline; margin:2px 0 8px;
+    font-size:12px; color:var(--dim); }
+  .sig-quote .q-price { font-size:16px; font-weight:800; color:var(--txt); }
+  .sig-quote .q-k { color:var(--dim-2); }
   .sig-chart-pane { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
   .sig-chart-pane .pane-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
   #signal-chart { flex:1 1 auto; min-height:0; width:100%; }
@@ -252,6 +261,7 @@
   <span class="tb-label">시황</span>
   <span id="regime-pill" class="sig-pill">-</span>
   <span id="regime-detail" class="tb-detail"></span>
+  <span id="regime-adaptive" class="tb-detail" style="display:none"></span>
   <span class="tb-sep" id="macro-sep" style="display:none"></span>
   <span id="macro-bias" class="sig-pill" style="display:none">-</span>
   <div class="macro-chips" id="macro-chips"></div>
@@ -261,6 +271,14 @@
   <div id="view-signal" class="view-app" style="display:none">
     <div class="sig-workspace">
       <div class="sig-list card" style="padding:0">
+        <div class="sig-toolbar">
+          <input id="sig-search" class="ctrl" type="search" placeholder="종목명·코드 검색" oninput="renderSignalList()">
+          <select id="sig-sort" class="ctrl" onchange="renderSignalList()">
+            <option value="signal">시그널순</option>
+            <option value="mktcap">시총순</option>
+            <option value="volume">거래량순</option>
+          </select>
+        </div>
         <div id="signal-body" class="placeholder" style="padding:32px 0">불러오는 중…</div>
       </div>
       <div class="sig-chart-pane card">
@@ -268,6 +286,7 @@
           <span id="signal-chart-title" style="font-weight:700;font-size:16px">종목을 선택하세요</span>
           <span id="signal-chart-sub" class="tb-detail"></span>
         </div>
+        <div id="signal-quote" class="sig-quote" style="display:none"></div>
         <div id="signal-intro" style="display:none;font-size:12px;color:var(--dim);margin:0 0 6px;line-height:1.5"></div>
         <div id="signal-backtest" style="display:none;font-size:11px;margin:0 0 8px"></div>
         <div id="signal-narrative" class="placeholder" style="display:none;background:var(--accent-weak);
@@ -430,11 +449,21 @@
         <div class="field">매도 임계값 <input type="number" step="0.1" id="th_sell" class="ctrl"></div>
         <div class="field">강력매도 임계값 <input type="number" step="0.1" id="th_ssell" class="ctrl"></div>
       </div>
+      <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:12px;cursor:pointer">
+        <input type="checkbox" id="cfg_regime_adaptive" style="width:auto">
+        <span>국면 적응 — 약세·조정·거시 비우호 국면에서 매수 임계값 자동 상향(더 높은 확신의 매수만 통과)</span>
+      </label>
       <div class="row" style="margin-top:14px">
         <span id="engine-winrate" class="stat-label" style="margin:0"></span>
         <button class="btn primary" onclick="saveEngine()" style="margin-left:auto">적용</button>
         <button class="btn" onclick="resetEngine()">기본값</button>
       </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <b style="font-size:15px">백테스트 정밀 분석 <span style="color:var(--dim);font-weight:600;font-size:12px">· 어떤 팩터가 승률을 끌어올리나 (관리자)</span></b>
+      <p class="page-desc" style="margin:6px 0 14px">각 팩터를 단독으로 백테스트해 기여도를 비교하고(매수 시그널 기준), 시간 구간별로 나눠 과최적화·불안정성을 점검합니다. 기본적 팩터는 point-in-time(그 시점에 공시돼 있던 재무)으로 반영합니다.</p>
+      <div id="bt-analysis" class="placeholder" style="padding:20px 0">불러오는 중…</div>
     </div>
   </div>
 </main>
@@ -683,6 +712,12 @@ async function loadRegime(){
     pill.className = 'sig-pill ' + d.regime;
     detail.textContent =
       `MA60 상회 ${fmtNum(d.breadth_pct, 1)}% · 평균 20일 모멘텀 ${d.avg_momentum_pct > 0 ? '+' : ''}${fmtNum(d.avg_momentum_pct, 1)}%`;
+    const adapt = document.getElementById('regime-adaptive');
+    if (d.adaptive && d.adaptive.bump > 0) {
+      adapt.style.display = '';
+      adapt.style.color = 'var(--sell)';
+      adapt.textContent = `⚙ 매수 기준 자동 상향 +${fmtNum(d.adaptive.bump, 1)} → ${fmtNum(d.adaptive.effective_buy_threshold, 1)} (${d.adaptive.reasons.join(', ')})`;
+    } else { adapt.style.display = 'none'; }
   } catch (e) {
     pill.textContent = '-'; pill.className = 'sig-pill HOLD'; detail.textContent = '';
   }
@@ -719,6 +754,7 @@ async function loadMacro(){
 }
 
 let _signalItems = {}, _favorites = new Set(), _backtestByKind = {};
+let _signalRows = null, _indexReady = false, _selectedTicker = null;
 
 async function loadSignals(){
   const el = document.getElementById('signal-body');
@@ -736,8 +772,9 @@ async function loadSignals(){
     if (!d.ready) { el.textContent = d.message || '아직 수집된 데이터가 없습니다 — /api/refresh를 먼저 호출하세요.'; return; }
     if (!d.items.length) { el.textContent = '시그널 데이터가 없습니다.'; return; }
     _signalItems = Object.fromEntries(d.items.map(r => [r.ticker, r]));
-    // 최상단 고정: 코스피200 근사 지수(항상 첫 행, default 차트)
-    let indexRow = '';
+    _signalRows = d.items;  // API 순서 = 점수 내림차순(시그널순 기본값)
+    // 최상단 고정: 코스피200 근사 지수(항상 첫 행, 검색/정렬 무관하게 고정)
+    _indexReady = mkt.ready;
     if (mkt.ready) {
       _signalItems[INDEX_TICKER] = {
         ticker: INDEX_TICKER, name: mkt.name, sector: '지수', kind: mkt.kind,
@@ -745,30 +782,9 @@ async function loadSignals(){
         narrative: '코스피200 근사 지수(유니버스 동일가중) · 기술 신호: '
           + (mkt.reasons && mkt.reasons.length ? mkt.reasons.map(r => r.replace(/^\[[^\]]+\]\s*/, '')).join(', ') : '뚜렷한 신호 없음'),
       };
-      indexRow = `<tr class="clickable-row idx-row" data-ticker="${INDEX_TICKER}">
-        <td>📌</td>
-        <td><b>${esc(mkt.name)}</b><div style="color:var(--dim);font-size:11px">시장 지수</div></td>
-        <td style="font-size:12px;color:var(--dim)">지수</td>
-        <td><span class="sig-pill ${mkt.kind}">${kindLabel(mkt.kind)}</span></td>
-      </tr>`;
     }
-    const star = (t) => `<span class="fav-star${_favorites.has(t) ? ' on' : ''}" data-fav="${esc(t)}" title="관심종목">${_favorites.has(t) ? '★' : '☆'}</span>`;
-    const rows = d.items.map(r => `<tr class="clickable-row" data-ticker="${esc(r.ticker)}">
-      <td>${star(r.ticker)}</td>
-      <td>${esc(r.name)}<div style="color:var(--dim);font-size:11px">${esc(r.ticker)}</div></td>
-      <td style="font-size:12px;color:var(--dim)">${r.sector ? esc(r.sector) : '–'}</td>
-      <td><span class="sig-pill ${r.kind}">${kindLabel(r.kind)}</span></td>
-    </tr>`).join('');
     el.className = '';
-    el.innerHTML = `<table class="dtable"><thead><tr>
-      <th></th><th>종목</th><th>섹터</th><th>시그널</th>
-    </tr></thead><tbody>${indexRow}${rows}</tbody></table>`;
-    el.querySelectorAll('tr.clickable-row').forEach(tr => {
-      tr.addEventListener('click', () => selectSignalRow(tr.dataset.ticker));
-    });
-    el.querySelectorAll('.fav-star').forEach(s => {
-      s.addEventListener('click', (ev) => { ev.stopPropagation(); toggleFav(s.dataset.fav, s); });
-    });
+    renderSignalList();
     // 기본 선택: 밸류체인에서 넘어온 종목 > 코스피 지수(고정 최상단) > 1위 종목
     const target = (_pendingSignalTicker && _signalItems[_pendingSignalTicker]) ? _pendingSignalTicker
       : (mkt.ready ? INDEX_TICKER : d.items[0].ticker);
@@ -779,7 +795,54 @@ async function loadSignals(){
   }
 }
 
+// 시총(원)·거래량(주) 사람이 읽기 좋은 한국식 단위로 축약
+function fmtMktcap(v){ if (v == null) return '–'; const jo = v / 1e12; return jo >= 1 ? fmtNum(jo, jo >= 10 ? 0 : 1) + '조' : fmtNum(v / 1e8, 0) + '억'; }
+function fmtVol(v){ if (v == null) return '–'; return v >= 1e8 ? fmtNum(v / 1e8, 1) + '억주' : v >= 1e4 ? fmtNum(v / 1e4, 0) + '만주' : fmtNum(v, 0) + '주'; }
+
+// 검색어 필터 + 선택 기준 정렬로 종목 리스트를 그린다(지수 행은 항상 최상단 고정).
+function renderSignalList(){
+  const el = document.getElementById('signal-body');
+  if (!_signalRows) return;
+  const q = (document.getElementById('sig-search').value || '').trim().toLowerCase();
+  const sort = document.getElementById('sig-sort').value;
+  let rows = _signalRows.filter(r =>
+    !q || r.name.toLowerCase().includes(q) || r.ticker.toLowerCase().includes(q));
+  const nn = (x) => (x == null ? -Infinity : x);  // 값 없으면 뒤로
+  if (sort === 'mktcap') rows = [...rows].sort((a, b) => nn(b.mktcap) - nn(a.mktcap));
+  else if (sort === 'volume') rows = [...rows].sort((a, b) => nn(b.vol_avg) - nn(a.vol_avg));
+  // 'signal'은 API 기본 순서(점수 내림차순) 유지
+  const metric = (r) => sort === 'mktcap' ? fmtMktcap(r.mktcap)
+    : sort === 'volume' ? '평균 ' + fmtVol(r.vol_avg)
+    : (r.score > 0 ? '+' : '') + fmtNum(r.score, 2);
+  const star = (t) => `<span class="fav-star${_favorites.has(t) ? ' on' : ''}" data-fav="${esc(t)}" title="관심종목">${_favorites.has(t) ? '★' : '☆'}</span>`;
+  const mkt = _indexReady ? _signalItems[INDEX_TICKER] : null;
+  const indexRow = (mkt && !q) ? `<tr class="clickable-row idx-row" data-ticker="${INDEX_TICKER}">
+      <td>📌</td>
+      <td><b>${esc(mkt.name)}</b><div class="sig-metric">시장 지수</div></td>
+      <td style="font-size:12px;color:var(--dim)">지수</td>
+      <td><span class="sig-pill ${mkt.kind}">${kindLabel(mkt.kind)}</span></td>
+    </tr>` : '';
+  const body = rows.map(r => `<tr class="clickable-row" data-ticker="${esc(r.ticker)}">
+      <td>${star(r.ticker)}</td>
+      <td>${esc(r.name)}<div class="sig-metric">${esc(r.ticker)} · ${metric(r)}</div></td>
+      <td style="font-size:12px;color:var(--dim)">${r.sector ? esc(r.sector) : '–'}</td>
+      <td><span class="sig-pill ${r.kind}">${kindLabel(r.kind)}</span></td>
+    </tr>`).join('');
+  el.innerHTML = rows.length || indexRow
+    ? `<table class="dtable"><thead><tr><th></th><th>종목</th><th>섹터</th><th>시그널</th></tr></thead>
+       <tbody>${indexRow}${body}</tbody></table>`
+    : `<div class="placeholder" style="padding:24px 12px">"${esc(q)}" 검색 결과 없음</div>`;
+  el.querySelectorAll('tr.clickable-row').forEach(tr => {
+    tr.addEventListener('click', () => selectSignalRow(tr.dataset.ticker));
+    tr.classList.toggle('selected-row', tr.dataset.ticker === _selectedTicker);
+  });
+  el.querySelectorAll('.fav-star').forEach(s => {
+    s.addEventListener('click', (ev) => { ev.stopPropagation(); toggleFav(s.dataset.fav, s); });
+  });
+}
+
 function selectSignalRow(ticker){
+  _selectedTicker = ticker;
   document.querySelectorAll('#signal-body tr.clickable-row').forEach(tr => {
     tr.classList.toggle('selected-row', tr.dataset.ticker === ticker);
   });
@@ -803,6 +866,17 @@ async function showSignalChart(ticker, item){
       + ` &nbsp;<span class="sig-pill ${item.kind}">${kindLabel(item.kind)}</span>`
       + ` <span style="color:var(--dim)">점수 ${item.score > 0 ? '+' : ''}${fmtNum(item.score, 2)} · 신뢰도 ${fmtNum(item.confidence, 2)}</span>`;
   } else sub.textContent = '';
+  const qEl = document.getElementById('signal-quote');
+  if (item && item.price != null) {
+    const chg = item.change_pct;
+    const chgColor = chg > 0 ? 'var(--sig-buy)' : chg < 0 ? 'var(--sig-sell)' : 'var(--dim)';
+    qEl.style.display = '';
+    qEl.innerHTML = `<span class="q-price">${fmtNum(item.price, 0)}원</span>`
+      + (chg != null ? ` <span style="color:${chgColor};font-weight:700">${chg > 0 ? '▲' : chg < 0 ? '▼' : ''}${fmtNum(Math.abs(chg), 2)}%</span>` : '')
+      + ` <span class="q-k">시총</span> ${fmtMktcap(item.mktcap)}`
+      + ` <span class="q-k">거래량</span> ${fmtVol(item.vol)}`
+      + (item.vol_avg != null ? ` <span class="q-k">(20일 평균 ${fmtVol(item.vol_avg)})</span>` : '');
+  } else qEl.style.display = 'none';
   const introEl = document.getElementById('signal-intro');
   if (item && item.intro) {
     introEl.style.display = '';
@@ -1242,6 +1316,7 @@ function _fillEngine(cfg, winrate){
   for (const [id, key] of Object.entries(_ENGINE_FIELDS)) {
     const el = document.getElementById(id); if (el && cfg[key] != null) el.value = cfg[key];
   }
+  document.getElementById('cfg_regime_adaptive').checked = (cfg.regime_adaptive == null) || cfg.regime_adaptive >= 0.5;
   const buy = (winrate || {}).BUY;
   document.getElementById('engine-winrate').innerHTML = buy && buy.n
     ? `현재 백테스트 — BUY 적중률 <b>${fmtNum(buy.winrate, 1)}%</b> · 5일 평균 ${buy.avg_ret_5d > 0 ? '+' : ''}${fmtNum(buy.avg_ret_5d, 2)}% (표본 ${buy.n}, 가격기반)`
@@ -1250,12 +1325,46 @@ function _fillEngine(cfg, winrate){
 async function loadEngine(){
   try { const d = await (await fetch('/api/engine/config')).json(); _fillEngine(d.config, d.winrate); }
   catch (e) {}
+  loadBacktestAnalysis();
+}
+
+// 팩터별 기여도 + 워크포워드 표를 그린다(관리자 정밀 분석).
+async function loadBacktestAnalysis(){
+  const el = document.getElementById('bt-analysis');
+  if (!el) return;
+  try {
+    const d = await (await fetch('/api/backtest/analysis')).json();
+    if (!d.ready) { el.textContent = '데이터 없음 — /api/refresh 먼저.'; return; }
+    const wrCell = (wr) => wr == null ? '<td style="color:var(--dim-2)">–</td>'
+      : `<td style="font-weight:700;color:${wr >= 55 ? 'var(--sig-buy)' : wr < 45 ? 'var(--sig-sell)' : 'var(--dim)'}">${fmtNum(wr, 1)}%</td>`;
+    const facs = (d.factors.factors || []);
+    const best = facs.filter(f => f.factor !== 'all' && f.winrate != null).sort((a, b) => b.winrate - a.winrate)[0];
+    const facRows = facs.map(f => `<tr${f.factor === 'all' ? ' style="border-top:2px solid var(--line-strong);font-weight:700"' : ''}>
+        <td>${esc(f.label)}${f.factor === best?.factor ? ' 🏆' : ''}</td>
+        <td style="color:var(--dim)">${f.n ? f.n.toLocaleString() : '–'}</td>
+        ${wrCell(f.winrate)}
+        <td style="color:${f.avg_ret > 0 ? 'var(--sig-buy)' : 'var(--sig-sell)'}">${f.avg_ret == null ? '–' : (f.avg_ret > 0 ? '+' : '') + fmtNum(f.avg_ret, 2) + '%'}</td>
+      </tr>`).join('');
+    const wf = d.walkforward.windows || [];
+    const wfRows = wf.map(s => `<tr><td>구간 ${s.window}</td><td style="color:var(--dim)">${s.n || '–'}</td>${wrCell(s.winrate)}</tr>`).join('');
+    const spread = d.walkforward.winrate_spread;
+    el.className = '';
+    el.innerHTML = `
+      <div style="font-size:13px;font-weight:700;margin:4px 0 6px">팩터별 기여도 <span style="color:var(--dim);font-weight:500">· 매수 시그널 ${d.factors.primary_horizon}일 기준</span></div>
+      <table class="dtable"><thead><tr><th>팩터</th><th>표본</th><th>적중률</th><th>평균수익</th></tr></thead><tbody>${facRows}</tbody></table>
+      ${best ? `<p class="page-desc" style="margin:8px 0 0">🏆 <b>${esc(best.label)}</b> 팩터가 단독 적중률 ${fmtNum(best.winrate, 1)}%로 가장 높습니다 — 이 팩터의 가중치를 높이면 승률 개선 여지가 있습니다.</p>` : ''}
+      <div style="font-size:13px;font-weight:700;margin:18px 0 6px">워크포워드 <span style="color:var(--dim);font-weight:500">· 시간 구간별 out-of-sample 안정성</span></div>
+      <table class="dtable"><thead><tr><th>구간</th><th>표본</th><th>적중률</th></tr></thead><tbody>${wfRows}</tbody></table>
+      ${spread != null ? `<p class="page-desc" style="margin:8px 0 0">구간 간 적중률 편차 <b>${fmtNum(spread, 1)}%p</b>${spread >= 15 ? ' — 편차가 커서 특정 시기에 치우친(과최적화 의심) 신호일 수 있습니다.' : ' — 구간 간 비교적 안정적입니다.'}</p>` : ''}
+      ${d.has_pit ? '' : '<p class="page-desc" style="margin:8px 0 0;color:var(--sell)">※ point-in-time 재무 미수집 — 기본적 팩터 제외. /api/refresh로 수집하세요.</p>'}`;
+  } catch (e) { el.textContent = '불러오지 못했습니다.'; }
 }
 async function saveEngine(){
   const btn = event.target; btn.disabled = true; const t = btn.textContent; btn.textContent = '적용 중…';
   try {
     const body = {};
     for (const [id, key] of Object.entries(_ENGINE_FIELDS)) body[key] = parseFloat(document.getElementById(id).value);
+    body.regime_adaptive = document.getElementById('cfg_regime_adaptive').checked ? 1 : 0;
     await fetch('/api/engine/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     await loadEngine();  // 재계산된 백테스트 반영
   } finally { btn.disabled = false; btn.textContent = t; }

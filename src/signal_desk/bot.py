@@ -52,6 +52,14 @@ def _market_context(prices: dict[str, list[float]]) -> dict:
     }
 
 
+def _eval_config(prices: dict[str, list[float]]) -> tuple:
+    """시그널 계산에 쓸 실효 설정 — 약세·비우호 국면이면 매수 임계값이 자동 상향된 config.
+    반환: (SignalConfig, adapt_info). api._signals와 동일 규칙(signalcfg.effective_config)."""
+    reg = regime.classify(prices)
+    mread = macro.read(store.load_macro())
+    return signalcfg.effective_config(reg, mread)
+
+
 def _update_decision_outcomes(prices: dict[str, list[float]]) -> None:
     """과거 매수 의사결정의 사후수익을 확정(3일 경과분) — advisor 학습 재료."""
     now = int(datetime.datetime.now(_KST).timestamp())
@@ -145,7 +153,8 @@ def run_once(dry_run: bool = False) -> dict:
         return {"ok": False, "reason": "시세 데이터 없음 — /api/refresh 먼저 호출 필요"}
 
     fundamentals = store.load_fundamentals()
-    signals = engine.evaluate(universe, prices, fundamentals, config=signalcfg.get_config(), sentiment=kb.sentiment_map())
+    eff_cfg, _ = _eval_config(prices)  # 약세·비우호 국면이면 매수 기준 자동 상향
+    signals = engine.evaluate(universe, prices, fundamentals, config=eff_cfg, sentiment=kb.sentiment_map())
     signal_by_ticker = {s.ticker: s for s in signals}
     name_by_ticker = {u["ticker"]: u["name"] for u in universe}
     if not dry_run:
@@ -288,7 +297,8 @@ def generate_reservations(dry_run: bool = False) -> dict:
     bal = kis.balance(creds)
     held = {h["ticker"] for h in bal["holdings"]} if bal else set()
     fundamentals = store.load_fundamentals()
-    signals = engine.evaluate(universe, prices, fundamentals, config=signalcfg.get_config(), sentiment=kb.sentiment_map())
+    eff_cfg, _ = _eval_config(prices)  # 국면 적응 매수 기준(예약도 동일 규칙)
+    signals = engine.evaluate(universe, prices, fundamentals, config=eff_cfg, sentiment=kb.sentiment_map())
     cfg = db.bot_config_get()
     slots = min(max(0, cfg["max_positions"] - len(held)), cfg["max_new_buys_per_run"])
     context = _market_context(prices)

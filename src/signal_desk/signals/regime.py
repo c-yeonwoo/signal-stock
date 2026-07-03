@@ -56,3 +56,28 @@ def classify(prices_by_ticker: dict[str, list[float]], config: RegimeConfig | No
         "avg_momentum_pct": avg_momentum_pct,
         "n": n,
     }
+
+
+# 국면·거시가 비우호일 때 매수 임계값에 더할 가산량(점수 스케일 ~[-3,3] 기준). 약한 시장일수록
+# 더 높은 확신의 매수만 통과시켜 승률을 높이기 위한 값 — 매도 임계값은 건드리지 않는다(청산은 억제 X).
+_REGIME_BUMP = {"조정": 0.8, "약세": 0.4, "중립": 0.0, "강세": 0.0, "과열": 0.0}
+_MACRO_UNFAVORABLE_BUMP = 0.3
+
+
+def buy_threshold_bump(regime_result: dict | None, macro_result: dict | None) -> dict:
+    """약세·조정 국면 / 거시 비우호일 때 매수 임계값에 더할 가산량과 사유를 반환.
+
+    반환: {bump: float, reasons: [str]}. 우호적·중립이면 bump=0. engine/config가 아니라 여기
+    (국면 판정 로직 옆)에 두어 봇·API가 동일한 규칙을 공유한다.
+    """
+    bump = 0.0
+    reasons: list[str] = []
+    reg = (regime_result or {}).get("regime")
+    r_bump = _REGIME_BUMP.get(reg, 0.0)
+    if r_bump:
+        bump += r_bump
+        reasons.append(f"{reg} 국면 — 매수 기준 +{r_bump:.1f}")
+    if (macro_result or {}).get("bias") == "비우호":
+        bump += _MACRO_UNFAVORABLE_BUMP
+        reasons.append(f"거시 비우호 — 매수 기준 +{_MACRO_UNFAVORABLE_BUMP:.1f}")
+    return {"bump": round(bump, 2), "reasons": reasons}
