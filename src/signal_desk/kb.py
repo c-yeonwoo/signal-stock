@@ -58,15 +58,20 @@ def classify_document(item: dict, source_type: str | None = None) -> str:
 
 
 _TRUST_ACCEPT = 0.7  # 이상이면 confirmed(다이제스트 반영)
+_TRUST_INSIGHT_ACCEPT = 0.5  # 신뢰 출처(전문가 인사이트)는 완화된 accept 임계값
 _TRUST_REVIEW = 0.4  # 미만이면 reject(미저장), 사이면 pending(보류)
 
 
-def validate_import(ticker: str, name: str, text: str, title: str = "") -> dict:
+def validate_import(ticker: str, name: str, text: str, title: str = "", trusted: bool = False) -> dict:
     """수동 입력 문서의 신뢰성 심사(KB 오염 방지). 반환: {verdict: accept|review|reject, trust, reasons}.
 
     1) 규칙 선필터(무료·빠름): 길이·증권 관련성·종목 언급.
     2) LLM 판단기(있으면 확정): 기존 confirmed KB와 대조해 과장·허위·조작·스팸·무관·근거없는 급변을
-       탐지하고 신뢰도(trust)를 매긴다. 규칙과 LLM 중 더 보수적인 판정을 채택한다."""
+       탐지하고 신뢰도(trust)를 매긴다. 규칙과 LLM 중 더 보수적인 판정을 채택한다.
+
+    trusted=True(큐레이션된 신뢰 출처, 예: 전문가 인사이트)면 accept 임계값을 낮춰(0.5) 의견·서사형
+    콘텐츠가 pending에만 머무르지 않고 반영되게 한다. 단 명백한 오염(LLM reject·trust<REVIEW)은 그대로 차단."""
+    accept_bar = _TRUST_INSIGHT_ACCEPT if trusted else _TRUST_ACCEPT
     body = f"{title} {text}"
     if len(text.strip()) < 40:
         return {"verdict": "reject", "trust": 0.0, "reasons": ["본문이 너무 짧아 신뢰 불가(40자 미만)"]}
@@ -89,9 +94,11 @@ def validate_import(ticker: str, name: str, text: str, title: str = "") -> dict:
         if out and isinstance(out.get("trust"), (int, float)):
             trust = max(0.0, min(1.0, float(out["trust"])))
             issues = [str(i) for i in (out.get("issues") or [])][:4]
-            v = str(out.get("verdict", "")).lower()
-            if v not in ("accept", "review", "reject"):
-                v = "accept" if trust >= _TRUST_ACCEPT else "review" if trust >= _TRUST_REVIEW else "reject"
+            llm_v = str(out.get("verdict", "")).lower()
+            # 신뢰도 임계값 기반 판정(신뢰 출처는 accept_bar 완화). 단 LLM이 명시적으로 reject하면 존중(오염 차단).
+            v = "accept" if trust >= accept_bar else "review" if trust >= _TRUST_REVIEW else "reject"
+            if llm_v == "reject":
+                v = "reject"
             if rule_verdict == "review" and v == "accept":  # 규칙 의심이면 accept로 격상 금지(보수적)
                 v = "review"
             return {"verdict": v, "trust": round(trust, 2), "reasons": reasons + issues}
@@ -106,7 +113,7 @@ def import_document(ticker: str, name: str, title: str, text: str,
     text = (text or "").strip()
     if not text or not ticker or not name:
         return {"ok": False, "reason": "ticker·name·text 필요"}
-    v = validate_import(ticker, name, text, title)
+    v = validate_import(ticker, name, text, title, trusted=(source_type == "insight"))
     if v["verdict"] == "reject":
         return {"ok": False, "verdict": "reject", "trust": v["trust"], "reasons": v["reasons"],
                 "reason": "KB 오염 우려로 저장하지 않음: " + (", ".join(v["reasons"]) or "신뢰도 낮음")}
