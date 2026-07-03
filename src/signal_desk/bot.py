@@ -14,7 +14,7 @@ import datetime
 import logging
 from zoneinfo import ZoneInfo
 
-from signal_desk import config, db, kb, llm, store, strategy
+from signal_desk import config, db, kb, llm, signalcfg, store, strategy
 from signal_desk.broker import kis
 from signal_desk.reference import cycle
 from signal_desk.signals import advisor, engine, macro, regime, risk
@@ -145,7 +145,7 @@ def run_once(dry_run: bool = False) -> dict:
         return {"ok": False, "reason": "시세 데이터 없음 — /api/refresh 먼저 호출 필요"}
 
     fundamentals = store.load_fundamentals()
-    signals = engine.evaluate(universe, prices, fundamentals, sentiment=kb.sentiment_map())
+    signals = engine.evaluate(universe, prices, fundamentals, config=signalcfg.get_config(), sentiment=kb.sentiment_map())
     signal_by_ticker = {s.ticker: s for s in signals}
     name_by_ticker = {u["ticker"]: u["name"] for u in universe}
     if not dry_run:
@@ -288,7 +288,7 @@ def generate_reservations(dry_run: bool = False) -> dict:
     bal = kis.balance(creds)
     held = {h["ticker"] for h in bal["holdings"]} if bal else set()
     fundamentals = store.load_fundamentals()
-    signals = engine.evaluate(universe, prices, fundamentals, sentiment=kb.sentiment_map())
+    signals = engine.evaluate(universe, prices, fundamentals, config=signalcfg.get_config(), sentiment=kb.sentiment_map())
     cfg = db.bot_config_get()
     slots = min(max(0, cfg["max_positions"] - len(held)), cfg["max_new_buys_per_run"])
     context = _market_context(prices)

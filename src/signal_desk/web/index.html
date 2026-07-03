@@ -122,6 +122,17 @@
   .sector-chip.link { cursor:pointer; color:var(--accent); border-color:var(--ring); }
   .sector-chip.link:hover { background:var(--accent-weak); }
 
+  /* ===== 시그널 엔진 파이프라인(관리자) ===== */
+  .pipe { display:flex; flex-wrap:wrap; gap:8px; align-items:stretch; }
+  .pipe-step { flex:1 1 150px; min-width:130px; border:1px solid var(--line); border-radius:var(--r-md);
+    background:var(--bg); padding:10px 12px; }
+  .pipe-step .ps-n { font-size:10px; color:var(--accent); font-weight:700; letter-spacing:.03em; }
+  .pipe-step .ps-t { font-weight:700; font-size:var(--fs-base); margin-top:2px; }
+  .pipe-step .ps-d { font-size:var(--fs-xs); color:var(--dim); margin-top:3px; line-height:1.45; }
+  .pipe-arrow { align-self:center; color:var(--dim-2); font-size:16px; }
+  .wcfg { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px 14px; }
+  .wcfg .field input { min-width:0; }
+
   /* ===== 밸류체인 ===== */
   .vc-sectors { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
   .vc-sectors button { padding:7px 15px; border:1px solid var(--line-strong); border-radius:var(--r-pill);
@@ -385,6 +396,41 @@
         </div>
       </div>
       <button class="btn primary" style="margin-top:16px" onclick="saveProfile()">저장</button>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <b style="font-size:15px">시그널 엔진 <span style="color:var(--dim);font-weight:600;font-size:12px">· 계산 파이프라인 (관리자)</span></b>
+      <p class="page-desc" style="margin:6px 0 14px">종합 시그널이 어떻게 계산되는지, 각 팩터의 신뢰도(가중치)와 임계값을 보고 조정합니다.</p>
+      <div class="pipe">
+        <div class="pipe-step"><div class="ps-n">1 · 수집</div><div class="ps-t">데이터</div><div class="ps-d">시세·재무(DART)·거시(FRED)·뉴스/영상(KB)</div></div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step"><div class="ps-n">2 · 팩터</div><div class="ps-t">5개 팩터 점수화</div><div class="ps-d">기술·기본·저평가·낙폭과대·정성(각 [-1,1] 정규화)</div></div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step"><div class="ps-n">3 · 결합</div><div class="ps-t">가중 결합</div><div class="ps-d">가중평균(없는 팩터는 재정규화 제외) → 종합점수</div></div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step"><div class="ps-n">4 · 판정</div><div class="ps-t">임계값 → 시그널</div><div class="ps-d">≥매수 → BUY · ≤매도 → SELL · 그 외 HOLD</div></div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step"><div class="ps-n">5 · 검증</div><div class="ps-t">백테스트</div><div class="ps-d">과거 적중률·손익비로 신뢰도 검증</div></div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step" style="border-color:var(--ring)"><div class="ps-n">6 · 실행</div><div class="ps-t">봇 LLM 선별</div><div class="ps-d">가드레일 안에서 후보 최종 선별·매매(성향 반영)</div></div>
+      </div>
+
+      <b style="font-size:14px;display:block;margin:22px 0 4px">팩터 신뢰도(가중치) · 임계값</b>
+      <p class="page-desc" style="margin:0 0 12px">가중치는 상대 비율로 자동 정규화됩니다. 값을 바꾸고 적용하면 시그널·백테스트에 즉시 반영됩니다.</p>
+      <div class="wcfg">
+        <div class="field">기술적 <input type="number" step="0.05" min="0" id="w_technical" class="ctrl"></div>
+        <div class="field">기본적 <input type="number" step="0.05" min="0" id="w_fundamental" class="ctrl"></div>
+        <div class="field">저평가 <input type="number" step="0.05" min="0" id="w_valuation" class="ctrl"></div>
+        <div class="field">낙폭과대 <input type="number" step="0.05" min="0" id="w_reversion" class="ctrl"></div>
+        <div class="field">정성(KB) <input type="number" step="0.05" min="0" id="w_qualitative" class="ctrl"></div>
+        <div class="field">매수 임계값 <input type="number" step="0.1" id="th_buy" class="ctrl"></div>
+        <div class="field">매도 임계값 <input type="number" step="0.1" id="th_sell" class="ctrl"></div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <span id="engine-winrate" class="stat-label" style="margin:0"></span>
+        <button class="btn primary" onclick="saveEngine()" style="margin-left:auto">적용</button>
+        <button class="btn" onclick="resetEngine()">기본값</button>
+      </div>
     </div>
   </div>
 </main>
@@ -1175,6 +1221,38 @@ function fillMyPage(){
   document.getElementById('mp_email').textContent = _userEmail || '';
   document.getElementById('mp_style').value = _profile['투자성향'] || 'balanced';
   document.getElementById('mp_sector').value = (_profile['관심섹터'] || []).join(', ');
+  loadEngine();
+}
+
+// ===== 시그널 엔진 설정(관리자) =====
+const _ENGINE_FIELDS = { w_technical: 'weight_technical', w_fundamental: 'weight_fundamental',
+  w_valuation: 'weight_valuation', w_reversion: 'weight_reversion', w_qualitative: 'weight_qualitative',
+  th_buy: 'buy_threshold', th_sell: 'sell_threshold' };
+function _fillEngine(cfg, winrate){
+  for (const [id, key] of Object.entries(_ENGINE_FIELDS)) {
+    const el = document.getElementById(id); if (el && cfg[key] != null) el.value = cfg[key];
+  }
+  const buy = (winrate || {}).BUY;
+  document.getElementById('engine-winrate').innerHTML = buy && buy.n
+    ? `현재 백테스트 — BUY 적중률 <b>${fmtNum(buy.winrate, 1)}%</b> · 5일 평균 ${buy.avg_ret_5d > 0 ? '+' : ''}${fmtNum(buy.avg_ret_5d, 2)}% (표본 ${buy.n}, 가격기반)`
+    : '백테스트 데이터 없음';
+}
+async function loadEngine(){
+  try { const d = await (await fetch('/api/engine/config')).json(); _fillEngine(d.config, d.winrate); }
+  catch (e) {}
+}
+async function saveEngine(){
+  const btn = event.target; btn.disabled = true; const t = btn.textContent; btn.textContent = '적용 중…';
+  try {
+    const body = {};
+    for (const [id, key] of Object.entries(_ENGINE_FIELDS)) body[key] = parseFloat(document.getElementById(id).value);
+    await fetch('/api/engine/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    await loadEngine();  // 재계산된 백테스트 반영
+  } finally { btn.disabled = false; btn.textContent = t; }
+}
+async function resetEngine(){
+  const d = await (await fetch('/api/engine/reset', { method: 'POST' })).json();
+  await loadEngine();
 }
 function saveProfile(){
   _profile = {

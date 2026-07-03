@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 from fastapi import Body, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from signal_desk import auth, bot, config, db, kb, store, strategy
+from signal_desk import auth, bot, config, db, kb, signalcfg, store, strategy
 from signal_desk.reference import cycle, sectors, valuechain
 from signal_desk.signals import macro, rebalance, regime, valuation
 from signal_desk.signals.engine import (
@@ -207,12 +207,12 @@ def rebalance_post(request: Request):
 @lru_cache(maxsize=1)
 def _signals():
     return evaluate(store.load_universe(), store.load_price_series(), store.load_fundamentals(),
-                    sentiment=kb.sentiment_map())
+                    config=signalcfg.get_config(), sentiment=kb.sentiment_map())
 
 
 @lru_cache(maxsize=1)
 def _backtest():
-    return backtest_summary(store.load_price_series())
+    return backtest_summary(store.load_price_series(), config=signalcfg.get_config())
 
 
 @lru_cache(maxsize=1)
@@ -457,6 +457,32 @@ def macro_get():
     if not data["indicators"]:
         return {"ready": False, "indicators": []}
     return {"ready": True, **data}
+
+
+# ---------- 시그널 엔진 설정(관리자) ----------
+@app.get("/api/engine/config")
+def engine_config_get():
+    """팩터 가중치·임계값 + 현재 백테스트 적중률(price_based) — 관리자 파이프라인 뷰."""
+    bt = _backtest() if store.is_ready() else {}
+    wr = {r["kind"]: r for r in bt.get("by_signal", [])}
+    return {"config": signalcfg.get_dict(), "winrate": wr, "method": bt.get("method")}
+
+
+@app.post("/api/engine/config")
+def engine_config_set(data: dict = Body(...)):
+    """가중치·임계값 저장 → 시그널/백테스트 캐시 무효화(즉시 반영)."""
+    out = signalcfg.set_dict(data)
+    _signals.cache_clear()
+    _backtest.cache_clear()
+    return {"ok": True, "config": out}
+
+
+@app.post("/api/engine/reset")
+def engine_config_reset():
+    out = signalcfg.reset()
+    _signals.cache_clear()
+    _backtest.cache_clear()
+    return {"ok": True, "config": out}
 
 
 # ---------- SPA 서빙 ----------
