@@ -159,3 +159,24 @@ def test_advisor_filters_to_candidates_and_caps(monkeypatch):
              {"ticker": "B", "name": "b", "score": 1.8, "confidence": 0.6, "reasons": []}]
     picks = advisor.select_buys(cands, {}, {}, [], 1)
     assert picks == [{"ticker": "B", "rationale": "좋음"}]  # 밖(ZZZ) 제외, 중복 제거, 1개 캡
+
+
+def test_trusted_source_lowers_accept_threshold(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    # LLM이 trust 0.6·verdict review로 판정 → 일반은 pending, 신뢰 출처는 confirmed(accept)
+    monkeypatch.setattr(kb.llm, "available", lambda: True)
+    monkeypatch.setattr(kb.llm, "complete_json",
+                        lambda *a, **k: {"trust": 0.6, "on_topic": True, "issues": [], "verdict": "review"})
+    body = "엔비디아(NVDA)가 새로운 수익 모델을 발표하며 매출과 주가 전망에 영향을 준다는 증권 관련 분석 내용입니다."
+    assert kb.validate_import("NVDA", "엔비디아", body)["verdict"] == "review"                 # 일반(0.7 기준)
+    assert kb.validate_import("NVDA", "엔비디아", body, trusted=True)["verdict"] == "accept"     # 신뢰 출처(0.5 기준)
+
+
+def test_trusted_source_still_blocks_hard_reject(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    # LLM이 명시적 reject(오염)면 신뢰 출처여도 차단
+    monkeypatch.setattr(kb.llm, "available", lambda: True)
+    monkeypatch.setattr(kb.llm, "complete_json",
+                        lambda *a, **k: {"trust": 0.55, "on_topic": False, "issues": ["조작 의심"], "verdict": "reject"})
+    body = "엔비디아(NVDA) 관련 증권 매출 전망 문장을 충분히 길게 적은 예시 본문입니다." * 2
+    assert kb.validate_import("NVDA", "엔비디아", body, trusted=True)["verdict"] == "reject"
