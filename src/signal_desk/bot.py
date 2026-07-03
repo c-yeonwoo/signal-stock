@@ -109,11 +109,29 @@ def _sell_note(reason: str, qty: int, avg_price: float, current_price: float,
             f"({pl_pct:+.1f}%), 보유 전량 {qty}주 청산")
 
 
+def reconcile_positions(bal: dict) -> None:
+    """내부 DB 포지션을 KIS 잔고(= source of truth)에 맞춘다 — 종목·수량·평단은 KIS로 덮어쓰고,
+    트레일링용 peak_price만 우리가 유지(기존 peak과 현재 평단 중 큰 값). KIS에 없는 DB 포지션은 삭제.
+
+    매수 시 DB엔 주문 추정가를 기록하지만 실제 체결 평단은 KIS가 정확하므로, 이 재동기화로
+    대시보드·리스크 판단이 항상 KIS 실측과 일치하게 한다(봇이 꺼져 있어도 조회 시점에 맞춤)."""
+    kis_h = {h["ticker"]: h for h in bal.get("holdings", [])}
+    for t in {p["ticker"] for p in db.bot_positions_all()} - set(kis_h):
+        db.bot_position_delete(t)  # KIS에서 사라진 포지션 정리
+    for t, h in kis_h.items():
+        pos = db.bot_position_get(t)
+        peak = max(pos["peak_price"] if pos else h["avg_price"], h["avg_price"])
+        entry = pos["entry_date"] if pos else _today()
+        db.bot_position_upsert(t, h["name"], h["qty"], h["avg_price"], peak, entry)
+
+
 def get_state() -> dict:
     """포트폴리오 탭용 종합 상태 — 봇 설정/현금·평가금액/보유종목/최근거래."""
     cfg = db.bot_config_get()
     creds = config.kis_credentials()
     bal = kis.balance(creds) if creds else None
+    if bal is not None:
+        reconcile_positions(bal)  # 조회 시점에 DB를 KIS 실측과 일치시킴(평단 등)
     return {
         "enabled": cfg["enabled"],
         "config": cfg,
