@@ -280,6 +280,10 @@
   <div id="view-signal" class="view-app" style="display:none">
     <div class="sig-workspace">
       <div class="sig-list card" style="padding:0">
+        <div class="seg-toggle" id="sig-market-seg" style="margin:10px 10px 0">
+          <button class="on" data-mkt="kospi" onclick="switchSignalMarket('kospi')">국내</button>
+          <button data-mkt="us" onclick="switchSignalMarket('us')">해외</button>
+        </div>
         <div class="sig-toolbar">
           <input id="sig-search" class="ctrl" type="search" placeholder="종목명·코드 검색" oninput="renderSignalList()">
           <select id="sig-sort" class="ctrl" onchange="renderSignalList()">
@@ -800,18 +804,30 @@ async function loadMacro(){
 }
 
 let _signalItems = {}, _favorites = new Set(), _backtestByKind = {};
-let _signalRows = null, _indexReady = false, _selectedTicker = null;
+let _signalRows = null, _indexReady = false, _selectedTicker = null, _sigMarket = 'kospi', _sigLoadSeq = 0;
+
+function switchSignalMarket(m){
+  if (_sigMarket === m) return;
+  _sigMarket = m;
+  document.querySelectorAll('#sig-market-seg button').forEach(b => b.classList.toggle('on', b.dataset.mkt === m));
+  document.getElementById('sig-search').value = '';
+  document.getElementById('sig-sort').value = 'signal';
+  loadSignals();
+}
 
 async function loadSignals(){
   const el = document.getElementById('signal-body');
   el.textContent = '불러오는 중…';
+  const isUS = _sigMarket === 'us';
+  const seq = ++_sigLoadSeq;  // 시장 전환 레이스 방지 — 최신 요청만 렌더
   try {
     const [d, fav, mkt, bt] = await Promise.all([
-      (await fetch('/api/signals')).json(),
+      (await fetch('/api/signals?market=' + _sigMarket)).json(),
       (await fetch('/api/favorites')).json(),
-      (await fetch('/api/market/chart')).json().catch(() => ({ ready: false })),
-      (await fetch('/api/backtest')).json().catch(() => ({ ready: false })),
+      isUS ? { ready: false } : (await fetch('/api/market/chart')).json().catch(() => ({ ready: false })),
+      isUS ? { ready: false } : (await fetch('/api/backtest')).json().catch(() => ({ ready: false })),
     ]);
+    if (seq !== _sigLoadSeq) return;  // 더 최신 로드가 시작됨 → 이 응답은 폐기
     _backtestByKind = {};
     if (bt.ready) (bt.by_signal || []).forEach(r => { _backtestByKind[r.kind] = r; });
     _favorites = new Set((fav.favorites || []).filter(f => f.kind === 'ticker').map(f => f.key));
@@ -916,11 +932,13 @@ async function showSignalChart(ticker, item){
   if (item && item.price != null) {
     const chg = item.change_pct;
     const chgColor = chg > 0 ? 'var(--sig-buy)' : chg < 0 ? 'var(--sig-sell)' : 'var(--dim)';
+    const isUS = _sigMarket === 'us';
+    const priceStr = isUS ? '$' + fmtNum(item.price, 2) : fmtNum(item.price, 0) + '원';
     qEl.style.display = '';
-    qEl.innerHTML = `<span class="q-price">${fmtNum(item.price, 0)}원</span>`
+    qEl.innerHTML = `<span class="q-price">${priceStr}</span>`
       + (chg != null ? ` <span style="color:${chgColor};font-weight:700">${chg > 0 ? '▲' : chg < 0 ? '▼' : ''}${fmtNum(Math.abs(chg), 2)}%</span>` : '')
-      + ` <span class="q-k">시총</span> ${fmtMktcap(item.mktcap)}`
-      + ` <span class="q-k">거래량</span> ${fmtVol(item.vol)}`
+      + (item.mktcap != null ? ` <span class="q-k">시총</span> ${fmtMktcap(item.mktcap)}` : '')
+      + (item.vol != null ? ` <span class="q-k">거래량</span> ${fmtVol(item.vol)}` : '')
       + (item.vol_avg != null ? ` <span class="q-k">(20일 평균 ${fmtVol(item.vol_avg)})</span>` : '')
       + (item.per != null ? ` <span class="q-k">PER</span> ${fmtNum(item.per, 1)}` : '')
       + (item.pbr != null ? ` <span class="q-k">PBR</span> ${fmtNum(item.pbr, 2)}` : '')
@@ -958,7 +976,8 @@ async function showSignalChart(ticker, item){
   } else kbEl.style.display = 'none';
   const holder = document.getElementById('signal-chart');
   try {
-    const chartUrl = ticker === INDEX_TICKER ? '/api/market/chart' : `/api/signals/${encodeURIComponent(ticker)}/chart`;
+    const chartUrl = ticker === INDEX_TICKER ? '/api/market/chart'
+      : `/api/signals/${encodeURIComponent(ticker)}/chart` + (_sigMarket === 'us' ? '?market=us' : '');
     const d = await (await fetch(chartUrl)).json();
     if (!d.ready) { holder.innerHTML = ''; holder.textContent = '차트 데이터가 없습니다.'; return; }
     if (!_signalChart) _signalChart = echarts.init(holder);
