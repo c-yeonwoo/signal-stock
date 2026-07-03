@@ -206,8 +206,9 @@ def rebalance_post(request: Request):
 # ---------- 시그널 (실데이터, store 캐시 기반) ----------
 @lru_cache(maxsize=1)
 def _signals():
+    cfg, _ = signalcfg.effective_config(_regime(), _macro())  # 약세·비우호 국면이면 매수 기준 자동 상향
     return evaluate(store.load_universe(), store.load_price_series(), store.load_fundamentals(),
-                    config=signalcfg.get_config(), sentiment=kb.sentiment_map())
+                    config=cfg, sentiment=kb.sentiment_map())
 
 
 @lru_cache(maxsize=1)
@@ -338,7 +339,8 @@ def regime_get():
     """시장 국면(강세·과열·조정·약세) — signals/regime.py 참고. 유니버스 breadth+모멘텀 근사."""
     if not store.is_ready():
         return {"ready": False, "regime": None}
-    return _regime()
+    _, adapt = signalcfg.effective_config(_regime(), _macro())  # 국면 적응으로 상향된 매수 기준
+    return {**_regime(), "adaptive": adapt}
 
 
 # ---------- 자동매매봇 (BACKLOG #7, KIS 모의투자) ----------

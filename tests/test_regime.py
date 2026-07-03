@@ -36,3 +36,18 @@ def test_flat_series_is_neutral():
 def test_insufficient_samples_is_not_ready():
     out = regime.classify({"SHORT": [100.0] * 10})
     assert out == {"ready": False, "regime": None, "breadth_pct": None, "avg_momentum_pct": None, "n": 0}
+
+
+def test_buy_threshold_bump_weak_and_unfavorable_stack():
+    out = regime.buy_threshold_bump({"regime": "약세"}, {"bias": "비우호"})
+    assert out["bump"] == pytest.approx(0.7)  # 약세 0.4 + 거시 비우호 0.3
+    assert len(out["reasons"]) == 2
+
+
+def test_buy_threshold_bump_correction_is_largest():
+    assert regime.buy_threshold_bump({"regime": "조정"}, None)["bump"] == pytest.approx(0.8)
+
+
+def test_buy_threshold_bump_zero_when_favorable():
+    out = regime.buy_threshold_bump({"regime": "강세"}, {"bias": "우호"})
+    assert out["bump"] == 0.0 and out["reasons"] == []

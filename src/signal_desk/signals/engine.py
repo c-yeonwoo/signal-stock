@@ -40,6 +40,10 @@ class SignalConfig:
     sell_threshold: float = -1.2
     strong_sell_threshold: float = -2.0
 
+    # 국면 적응: 1이면 약세·조정·거시 비우호 국면에서 매수 임계값을 자동 상향(regime.buy_threshold_bump).
+    # 0이면 임계값 고정. (관리자 조정 필드 — signalcfg.FIELDS에 포함)
+    regime_adaptive: float = 1.0
+
     rsi_period: int = 14
     rsi_oversold: float = 30
     rsi_overbought: float = 70
