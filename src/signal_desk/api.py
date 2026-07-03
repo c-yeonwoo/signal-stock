@@ -259,8 +259,37 @@ def _macro():
     return {"indicators": indicators, **macro.read(indicators)}
 
 
+def _us_signal_items() -> list[dict]:
+    """미국(S&P500) 시그널 항목 — KOSPI와 동일 형태. 재무·KB·밸류체인 없어 관련 필드는 null,
+    섹터는 GICS(us_universe)에서. 현재가·등락은 us_prices 마지막 두 종가로."""
+    sig = _us_signals()
+    if not sig:
+        return []
+    sector_of = {u["ticker"]: u.get("sector") for u in store.load_us_universe()}
+    hist = store.load_us_price_series()
+    items = []
+    for r in sig.values():
+        closes = hist.get(r.ticker) or []
+        price = closes[-1] if closes else None
+        prev = closes[-2] if len(closes) >= 2 else None
+        d = asdict(r)
+        d["price"] = price
+        d["change_pct"] = round((price / prev - 1) * 100, 2) if (price and prev) else None
+        d["mktcap"] = d["vol"] = d["vol_avg"] = d["per"] = d["pbr"] = None
+        d["sector"] = sector_of.get(r.ticker)
+        d["intro"] = d["intro_desc"] = d["kb"] = None
+        items.append(d)
+    items.sort(key=lambda x: x["score"], reverse=True)
+    return items
+
+
 @app.get("/api/signals")
-def signals_get():
+def signals_get(market: str = "kospi"):
+    if market == "us":
+        items = _us_signal_items()
+        if not items:
+            return {"ready": False, "items": [], "message": "미국 종목 시세가 아직 없습니다 — 백필 후 표시됩니다."}
+        return {"ready": True, "items": items}
     if not store.is_ready():
         return {"ready": False, "items": [], "message": "아직 수집된 데이터가 없습니다. /api/refresh를 먼저 호출하세요."}
     items = []
@@ -304,9 +333,9 @@ def backtest_analysis_get():
 
 
 @app.get("/api/signals/{ticker}/chart")
-def signal_chart_get(ticker: str):
-    """종목 가격+지표 시계열(차트용) — 종가/MA20·60·120/RSI/MACD."""
-    history = store.load_price_history(ticker)
+def signal_chart_get(ticker: str, market: str = "kospi"):
+    """종목 가격+지표 시계열(차트용) — 종가/MA20·60·120/RSI/MACD. market=us면 미국 시세."""
+    history = store.load_us_price_history(ticker) if market == "us" else store.load_price_history(ticker)
     if not history:
         return {"ready": False, "dates": []}
     closes = [h["close"] for h in history]
@@ -315,7 +344,7 @@ def signal_chart_get(ticker: str):
     return {
         "ready": True,
         "ticker": ticker,
-        "quote": _quotes().get(ticker),  # 현재가·시총·거래량(차트 헤더 표기)
+        "quote": None if market == "us" else _quotes().get(ticker),  # US는 헤더 quote 별도 없음(현재가는 항목에)
         "dates": dates,
         "close": closes,
         "ma20": series["ma_short"],
