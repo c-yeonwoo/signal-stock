@@ -247,7 +247,6 @@
   <div class="tabs">
     <button class="tab" data-tab="signal" onclick="switchTab('signal')">시그널</button>
     <button class="tab" data-tab="trading" onclick="switchTab('trading')">트레이딩</button>
-    <button class="tab" data-tab="valuation" onclick="switchTab('valuation')">저평가</button>
     <button class="tab" data-tab="cycle" onclick="switchTab('cycle')">산업 사이클</button>
   </div>
   <div class="right">
@@ -299,12 +298,6 @@
     </div>
   </div>
 
-  <div id="view-valuation" class="view-doc" style="display:none">
-    <h2 class="page-head">저평가 <span style="color:var(--dim);font-size:14px;font-weight:600">· 발견</span></h2>
-    <p class="page-desc">PER·PBR이 유니버스 내 상대적으로 낮은(저평가) 순으로 정렬합니다 — 사이클·밸류체인에서
-      주목한 섹터의 종목이 실제로 싼지 여기서 확인하세요. 섹터 분류 전까지는 전체 유니버스 상대 순위입니다.</p>
-    <div class="card"><div id="valuation-body" class="placeholder">불러오는 중…</div></div>
-  </div>
 
   <div id="view-cycle" class="view-app" style="display:none">
     <h2 class="page-head">산업 사이클</h2>
@@ -556,7 +549,7 @@
 </dialog>
 
 <script>
-const _ROUTES = ['signal','trading','valuation','cycle','mypage'];
+const _ROUTES = ['signal','trading','cycle','mypage'];
 let _userEmail = '', _profile = {};
 
 function switchTab(t){
@@ -564,7 +557,6 @@ function switchTab(t){
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   _ROUTES.forEach(v => { const el = document.getElementById('view-' + v); if (el) el.style.display = (v === t) ? '' : 'none'; });
   if (t === 'signal') loadSignals();  // 시황 리본은 전역(startApp에서 로드)
-  if (t === 'valuation') loadValuation();
   if (t === 'cycle') { loadCycle(); loadValuechain(); }  // 산업 사이클 = 경기사이클 + 밸류체인
   if (t === 'trading') switchTradingSeg(_tradingSeg);
   if (t === 'mypage') fillMyPage();
@@ -911,7 +903,11 @@ async function showSignalChart(ticker, item){
       + (chg != null ? ` <span style="color:${chgColor};font-weight:700">${chg > 0 ? '▲' : chg < 0 ? '▼' : ''}${fmtNum(Math.abs(chg), 2)}%</span>` : '')
       + ` <span class="q-k">시총</span> ${fmtMktcap(item.mktcap)}`
       + ` <span class="q-k">거래량</span> ${fmtVol(item.vol)}`
-      + (item.vol_avg != null ? ` <span class="q-k">(20일 평균 ${fmtVol(item.vol_avg)})</span>` : '');
+      + (item.vol_avg != null ? ` <span class="q-k">(20일 평균 ${fmtVol(item.vol_avg)})</span>` : '')
+      + (item.per != null ? ` <span class="q-k">PER</span> ${fmtNum(item.per, 1)}` : '')
+      + (item.pbr != null ? ` <span class="q-k">PBR</span> ${fmtNum(item.pbr, 2)}` : '')
+      + (item.valuation_percentile != null
+          ? ` <span class="q-k">저평가순위</span> <b style="color:${item.valuation_percentile <= 50 ? 'var(--sig-buy)' : 'var(--dim)'}">상위 ${fmtNum(item.valuation_percentile, 0)}%</b>` : '');
   } else qEl.style.display = 'none';
   const introEl = document.getElementById('signal-intro');
   if (item && item.intro) {
@@ -1035,31 +1031,6 @@ async function showSignalChart(ticker, item){
     _signalChart.resize();
   } catch (e) {
     holder.textContent = '차트를 불러오지 못했습니다.';
-  }
-}
-
-async function loadValuation(){
-  const el = document.getElementById('valuation-body');
-  el.textContent = '불러오는 중…';
-  try {
-    const d = await (await fetch('/api/valuation')).json();
-    if (!d.ready) { el.textContent = '아직 수집된 데이터가 없습니다 — /api/refresh를 먼저 호출하세요.'; return; }
-    if (!d.items.length) { el.textContent = 'PER/PBR 데이터를 가진 종목이 없습니다.'; return; }
-    const rows = d.items.map((r, i) => `<tr>
-      <td>${i + 1}</td>
-      <td>${esc(r.name)}<div style="color:var(--dim);font-size:11px">${esc(r.ticker)}</div></td>
-      <td class="num">${fmtNum(r.per, 1)}</td>
-      <td class="num">${fmtNum(r.pbr, 2)}</td>
-      <td class="num">${r.roe == null ? '-' : fmtNum(r.roe, 1) + '%'}</td>
-      <td class="num">${fmtNum(r.valuation_score, 1)}</td>
-    </tr>`).join('');
-    el.className = '';
-    el.innerHTML = `<table class="dtable"><thead><tr>
-      <th>#</th><th>종목</th><th class="num">PER</th><th class="num">PBR</th>
-      <th class="num">ROE</th><th class="num">저평가점수</th>
-    </tr></thead><tbody>${rows}</tbody></table>`;
-  } catch (e) {
-    el.textContent = '불러오지 못했습니다.';
   }
 }
 
