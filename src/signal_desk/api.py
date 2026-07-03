@@ -65,7 +65,12 @@ async def _bot_loop():
                     if not result.get("ok"):
                         log.info("자동매매봇 실행 스킵: %s", result.get("reason"))
                 elif weekday and now.time() >= datetime.time(15, 40) and db.kv_get("bot_resv_date") != _kst_today():
-                    # 마감 후 1회: 다음 개장용 예약 생성(뉴스·거시 반영은 KB 갱신 후가 이상적)
+                    # 마감 후 1회: KB(뉴스) 갱신 → 신선한 정성/이벤트 반영 후 다음 개장용 예약 생성
+                    try:
+                        kb.refresh(_kb_targets())
+                        _signals.cache_clear()
+                    except Exception as e:
+                        log.warning("마감후 KB 갱신 실패(예약은 계속): %s", e)
                     bot.generate_reservations()
                     db.kv_set("bot_resv_date", _kst_today())
         except Exception as e:

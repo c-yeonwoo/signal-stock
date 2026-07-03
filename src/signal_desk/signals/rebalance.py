@@ -54,7 +54,8 @@ def propose(holdings: list[dict], signal_by_ticker: dict, prices: dict[str, list
     held = {h["ticker"] for h in holdings}
     slots = max(0, target_n - keep_n)
     strong = sorted((s for t, s in signal_by_ticker.items()
-                     if engine.is_buy(s.kind) and s.score >= style_params["min_buy_score"] and t not in held),
+                     if engine.is_buy(s.kind) and s.score >= style_params["min_buy_score"]
+                     and t not in held and not getattr(s, "event_risk", False)),
                     key=lambda s: s.score, reverse=True)[:slots]
     adds = [{"ticker": s.ticker, "name": s.name, "score": s.score, "kind": s.kind,
              "reason": f"미보유 {s.kind}(점수 {s.score:+.2f}) — 목표배분 채움(약 {target_w * 100:.0f}%)"}

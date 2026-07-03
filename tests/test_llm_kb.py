@@ -13,14 +13,27 @@ def test_qual_component_clamps_and_carries_reasons():
     assert norm == 1.0 and weight == 0.15 and has is True and reasons == ["[정성] 호재"]
 
 
-def test_evaluate_includes_qualitative_when_provided():
+def test_evaluate_records_qualitative_but_excludes_from_score():
+    # 접근 B: 정성은 점수 팩터가 아니라 표시·veto용 — 필드는 채우되 reasons(점수 근거)엔 안 넣음
     universe = [{"ticker": "005930", "name": "삼성전자"}]
     closes = [100 - i for i in range(20)]  # RSI 과매도 → 기술 BUY 성분
     sentiment = {"005930": {"score": 0.9, "reasons": ["[정성] 호재 뉴스 다수"]}}
     r = engine.evaluate(universe, {"005930": closes}, sentiment=sentiment)[0]
-    assert r.has_qualitative is True
-    assert r.qualitative_score == 0.9
-    assert any("정성" in x for x in r.reasons)
+    assert r.has_qualitative is True and r.qualitative_score == 0.9
+    assert not any("정성" in x for x in r.reasons)  # 점수 근거에는 미포함
+
+
+def test_evaluate_sets_event_risk_from_sentiment():
+    universe = [{"ticker": "005930", "name": "삼성전자"}]
+    closes = [100 - i for i in range(20)]
+    sentiment = {"005930": {"score": -0.5, "reasons": [], "event_risk": True, "event_note": "리콜 — ..."}}
+    r = engine.evaluate(universe, {"005930": closes}, sentiment=sentiment)[0]
+    assert r.event_risk is True and "리콜" in r.event_note
+
+
+def test_detect_event_flags_negative_events():
+    assert kb.detect_event([{"title": "A사 횡령 혐의 압수수색", "summary": ""}])[0] is True
+    assert kb.detect_event([{"title": "B사 실적 발표", "summary": "영업이익 증가"}])[0] is False
 
 
 def test_rule_digest_sentiment_from_keywords():

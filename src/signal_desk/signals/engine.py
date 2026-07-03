@@ -80,6 +80,8 @@ class SignalResult:
     has_reversion: bool = False
     qualitative_score: float | None = None
     has_qualitative: bool = False
+    event_risk: bool = False  # KB에서 최근 악재 이벤트 감지 — 매수 후보에서 제외(veto)
+    event_note: str = ""
     reasons: list[str] = field(default_factory=list)
     narrative: str = ""
 
@@ -261,15 +263,17 @@ def evaluate(
             sentiment.get(ticker), config.weight_qualitative
         )
 
+        # 정성(KB)은 점수 팩터가 아니라 '악재 이벤트 veto'로만 쓴다(백테스트상 점수 기여 미미 —
+        # 대신 KB의 강점인 이벤트 리스크 회피에 집중). 감성 점수는 표시용으로만 보존.
         components = [
             (tech_score / 3.0, config.weight_technical, tech_reasons),
             (fund.score / 2.0 if fund.has_data else 0.0, config.weight_fundamental if fund.has_data else 0.0, fund.reasons),
             (val_norm, val_weight, val_reasons),
             (rev_norm, rev_weight, rev_reasons),
-            (qual_norm, qual_weight, qual_reasons),
         ]
         combined = combine(components, config)
 
+        entry = sentiment.get(ticker) or {}
         result = SignalResult(
             ticker=ticker, name=name, score=combined["score"], kind=combined["kind"],
             confidence=combined["confidence"], technical_score=round(tech_score, 2),
@@ -277,6 +281,7 @@ def evaluate(
             valuation_percentile=val_pct, has_valuation=has_valuation,
             reversion_score=round(rev_score_raw, 2), has_reversion=has_reversion,
             qualitative_score=qual_score, has_qualitative=has_qualitative,
+            event_risk=bool(entry.get("event_risk")), event_note=str(entry.get("event_note") or ""),
             reasons=combined["reasons"],
         )
         result.narrative = narr.explain(result)

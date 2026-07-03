@@ -894,11 +894,17 @@ async function showSignalChart(ticker, item){
   if (item && item.narrative) { narrEl.style.display = ''; narrEl.textContent = item.narrative; }
   else narrEl.style.display = 'none';
   const kbEl = document.getElementById('signal-kb');
-  if (item && item.kb) {
-    const s = item.kb.sentiment, cls = s > 0.15 ? 'var(--sig-buy)' : s < -0.15 ? 'var(--sig-sell)' : 'var(--dim)';
+  const evWarn = (item && item.event_risk)
+    ? `<div style="color:var(--sell);font-weight:700;margin-bottom:4px">⚠ 최근 악재 감지 — 매수 후보 제외${item.event_note ? ': ' + esc(item.event_note) : ''}</div>` : '';
+  if (item && (item.kb || evWarn)) {
     kbEl.style.display = '';
-    kbEl.innerHTML = `🗞️ <b>정성(뉴스·영상)</b> 심리 <b style="color:${cls}">${s > 0 ? '+' : ''}${fmtNum(s, 2)}</b> · ${esc(item.kb.summary || '')}`
-      + (item.kb.points && item.kb.points.length ? `<div style="color:var(--dim);margin-top:3px">· ${item.kb.points.map(esc).join(' · ')}</div>` : '');
+    let html = evWarn;
+    if (item.kb) {
+      const s = item.kb.sentiment, cls = s > 0.15 ? 'var(--sig-buy)' : s < -0.15 ? 'var(--sig-sell)' : 'var(--dim)';
+      html += `🗞️ <b>정성(뉴스)</b> 심리 <b style="color:${cls}">${s > 0 ? '+' : ''}${fmtNum(s, 2)}</b> <span style="color:var(--dim-2)">· 참고용(점수 미반영)</span> · ${esc(item.kb.summary || '')}`
+        + (item.kb.points && item.kb.points.length ? `<div style="color:var(--dim);margin-top:3px">· ${item.kb.points.map(esc).join(' · ')}</div>` : '');
+    }
+    kbEl.innerHTML = html;
   } else kbEl.style.display = 'none';
   const holder = document.getElementById('signal-chart');
   try {
