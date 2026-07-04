@@ -1201,9 +1201,11 @@ async function loadBotState(){
 
     document.getElementById('bot-status-label').textContent = d.enabled ? '실행 중' : '꺼짐';
     document.getElementById('bot-toggle-btn').textContent = d.enabled ? '끄기' : '켜기';
+    const connTxt = d.backend === 'paper'
+      ? '🧪 자체 모의계좌(paper) — 종가 기준 가상 체결'
+      : (d.kis_connected ? 'KIS 모의계좌 연결됨' : 'KIS 연결 안 됨(포트 29443 차단·.env 확인)');
     document.getElementById('bot-kis-status').innerHTML =
-      (d.kis_connected ? 'KIS 모의계좌 연결됨' : 'KIS 연결 안 됨(.env 확인)')
-      + ` · <b style="color:${d.llm_enabled ? 'var(--sig-buy)' : 'var(--dim)'}">AI 판단 ${d.llm_enabled ? 'ON' : 'OFF'}</b>`;
+      connTxt + ` · <b style="color:${d.llm_enabled ? 'var(--sig-buy)' : 'var(--dim)'}">AI 판단 ${d.llm_enabled ? 'ON' : 'OFF'}</b>`;
     const cfg = d.config || {};
     document.getElementById('bot-rules').innerHTML =
       `<b>ON이면 장중 5분마다</b> 현재 계좌 기준으로 자동 판단·매매(강한 BUY 후보 → <b>AI 최종 선별</b>) · `

@@ -44,9 +44,11 @@ def _set_cfg(**kw):
 
 
 def test_no_credentials(monkeypatch):
+    # KIS 백엔드를 강제한 상태에서 자격증명이 없으면 실패(자격증명 없으면 기본은 paper로 폴백됨)
+    monkeypatch.setattr(bot.config, "broker_backend", lambda: "kis")
     monkeypatch.setattr(bot.config, "kis_credentials", lambda: None)
     out = bot.run_once()
-    assert out == {"ok": False, "reason": "KIS 인증정보 없음(.env 확인)"}
+    assert out == {"ok": False, "reason": "브로커 인증정보 없음(.env 확인)"}
 
 
 def test_outside_market_hours_blocks_real_run(monkeypatch):
@@ -83,9 +85,9 @@ def test_dry_run_ignores_market_hours_and_places_no_orders(tmp_path, monkeypatch
 def test_balance_failure(monkeypatch):
     monkeypatch.setattr(bot.config, "kis_credentials", lambda: _creds())
     monkeypatch.setattr(bot, "is_market_hours", lambda: True)
-    monkeypatch.setattr(bot.kis, "balance", lambda creds=None: None)
+    monkeypatch.setattr(bot.kis, "balance", lambda creds=None, retries=3: None)
     out = bot.run_once()
-    assert out == {"ok": False, "reason": "KIS 잔고조회 실패"}
+    assert out == {"ok": False, "reason": "잔고조회 실패"}
 
 
 def test_no_price_data(monkeypatch):

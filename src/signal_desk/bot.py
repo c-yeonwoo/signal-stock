@@ -39,6 +39,23 @@ def _today() -> str:
     return datetime.date.today().isoformat()
 
 
+def _dbroker():
+    """국내 브로커 백엔드 — config.broker_backend()로 kis(모의투자 실계좌) 또는 paper(자체 모의계좌) 선택."""
+    if config.broker_backend() == "paper":
+        from signal_desk.broker import paper
+        return paper
+    return kis
+
+
+def _dcreds() -> dict | None:
+    """국내 브로커 자격증명 — paper는 외부 인증이 없으므로 sentinel(truthy)로 통과."""
+    return {"env": "paper"} if config.broker_backend() == "paper" else config.kis_credentials()
+
+
+def _paper() -> bool:
+    return config.broker_backend() == "paper"
+
+
 # 미국 정규장(대략) — 서머타임 EDT 기준 22:30~05:00 KST, EST면 23:30~06:00. 넉넉히 22:30~06:00로 근사.
 _US_OPEN = datetime.time(22, 30)
 _US_CLOSE = datetime.time(6, 0)
@@ -131,7 +148,7 @@ def _live_price(ticker: str, creds: dict, fallback: float, dry_run: bool) -> flo
     """판단 시점 실시간 현재가(장중 갭 대응). dry_run·조회 실패 시 캐시 종가로 폴백."""
     if dry_run:
         return fallback
-    live = kis.current_price(ticker, creds)
+    live = _dbroker().current_price(ticker, creds)
     return live if live else fallback
 
 
@@ -224,10 +241,10 @@ def reconcile_positions(bal: dict) -> None:
 def snapshot_positions() -> bool:
     """보유종목 현재가·수익률 스냅샷 갱신(장 종료 후 1회 등) — KIS 잔고로 reconcile.
     KIS 인증 없음·조회 실패 시 False(기존 스냅샷 유지)."""
-    creds = config.kis_credentials()
+    creds = _dcreds()
     if not creds:
         return False
-    bal = kis.balance(creds, retries=1)
+    bal = _dbroker().balance(creds, retries=1)
     if bal is None:
         return False
     reconcile_positions(bal)
@@ -237,13 +254,14 @@ def snapshot_positions() -> bool:
 def get_state() -> dict:
     """포트폴리오 탭용 종합 상태 — 봇 설정/현금·평가금액/보유종목/최근거래."""
     cfg = db.bot_config_get()
-    creds = config.kis_credentials()
-    bal = _display_balance("kospi", lambda: kis.balance(creds, retries=1)) if creds else None  # 캐시·fail-fast
+    creds = _dcreds()
+    bal = _display_balance("kospi", lambda: _dbroker().balance(creds, retries=1)) if creds else None  # 캐시·fail-fast
     if bal is not None:
-        reconcile_positions(bal)  # 조회 시점에 DB를 KIS 실측과 일치시킴(평단 등)
+        reconcile_positions(bal)  # 조회 시점에 DB를 브로커 실측과 일치시킴(평단 등)
     return {
         "enabled": cfg["enabled"],
         "config": cfg,
+        "backend": config.broker_backend(),
         "kis_connected": bal is not None,
         "cash": bal["cash"] if bal else None,
         "total_eval": bal["total_eval"] if bal else None,
@@ -278,15 +296,16 @@ def run_once(dry_run: bool = False) -> dict:
     dry_run=True면 주문/DB기록 없이 '무엇을 왜 매매할지' 계획만 계산해 반환한다(장 시간 무관,
     안전한 미리보기). 계획에는 정량 근거(점수·수량 산정)가 담긴다.
     """
-    creds = config.kis_credentials()
+    creds = _dcreds()
     if not creds:
-        return {"ok": False, "reason": "KIS 인증정보 없음(.env 확인)"}
-    if not dry_run and not is_market_hours():
+        return {"ok": False, "reason": "브로커 인증정보 없음(.env 확인)"}
+    # paper 백엔드는 종가 기준 가상 체결이라 장 시간과 무관하게 실행. KIS 실주문만 장 시간 제한.
+    if not _paper() and not dry_run and not is_market_hours():
         return {"ok": False, "reason": "장 시간이 아닙니다(평일 09:00~15:20 KST에만 실주문). '판단 미리보기'로 계획만 확인하세요."}
 
-    bal = kis.balance(creds)
+    bal = _dbroker().balance(creds)
     if bal is None:
-        return {"ok": False, "reason": "KIS 잔고조회 실패"}
+        return {"ok": False, "reason": "잔고조회 실패"}
 
     universe = store.load_universe()
     prices = store.load_price_series()
@@ -333,7 +352,7 @@ def run_once(dry_run: bool = False) -> dict:
             plan = {"ticker": ticker, "name": name_by_ticker.get(ticker, ticker), "qty": qty,
                     "reason": reason, "note": note, "price": current_price}
             if not dry_run:
-                result = kis.place_order(ticker, "sell", qty, creds=creds)
+                result = _dbroker().place_order(ticker, "sell", qty, creds=creds)
                 if result is not None:  # 체결된 주문만 기록·반영(장 밖 유령거래 방지)
                     db.bot_trade_log(ticker, plan["name"], "sell", qty, current_price, reason,
                                       result["order_no"], score=sig.score if sig else None, note=note)
@@ -348,7 +367,7 @@ def run_once(dry_run: bool = False) -> dict:
                                     peak, pos["entry_date"] if pos else _today())
 
     # 매도 반영된 최신 잔고로 매수 슬롯 계산(모의투자는 즉시체결 가정)
-    bal2 = (kis.balance(creds) or bal) if not dry_run else bal
+    bal2 = (_dbroker().balance(creds) or bal) if not dry_run else bal
     held_after = {h["ticker"] for h in bal2["holdings"]}
     available_slots = max(0, cfg["max_positions"] - len(held_after))
     # 한 사이클 신규 매수 개수 제한 — 시그널 BUY가 많아도 한꺼번에 다 사지 않는다
@@ -409,7 +428,7 @@ def run_once(dry_run: bool = False) -> dict:
             plan = {"ticker": s.ticker, "name": s.name, "qty": qty, "price": live, "limit_price": limit_price,
                     "reason": "SIGNAL", "note": note, "score": s.score, "ai": bool(llm_reason)}
             if not dry_run:
-                result = kis.place_order(s.ticker, "buy", qty, price=limit_price, creds=creds)  # 지정가 주문
+                result = _dbroker().place_order(s.ticker, "buy", qty, price=limit_price, creds=creds)  # 지정가 주문
                 if result is not None:  # 체결된 주문만 기록·반영
                     db.bot_trade_log(s.ticker, s.name, "buy", qty, live, "SIGNAL",
                                       result["order_no"], score=s.score, note=note)
@@ -451,7 +470,7 @@ def run_once(dry_run: bool = False) -> dict:
         plan = {"ticker": t, "name": h["name"], "qty": qty, "price": live, "limit_price": limit_price,
                 "reason": "ADD", "note": note, "score": sig.score, "ai": False}
         if not dry_run:
-            result = kis.place_order(t, "buy", qty, price=limit_price, creds=creds)
+            result = _dbroker().place_order(t, "buy", qty, price=limit_price, creds=creds)
             if result is not None:
                 new_qty = h["qty"] + qty
                 new_avg = round((h["qty"] * avg + qty * live) / new_qty, 2)
@@ -468,7 +487,7 @@ def run_once(dry_run: bool = False) -> dict:
             cash -= qty * live
         buys.append(plan)
 
-    final_bal = (kis.balance(creds) or bal2) if not dry_run else bal2
+    final_bal = (_dbroker().balance(creds) or bal2) if not dry_run else bal2
     return {
         "ok": True, "dry_run": dry_run, "skipped_weak_buys": skipped_weak,
         "skipped_gap_buys": skipped_gap, "advisor_used": advisor_used,
@@ -484,15 +503,15 @@ _MAX_CHASE_PCT = 0.02  # 예약 목표가 대비 +2%까지는 추격 매수, 그
 def generate_reservations(dry_run: bool = False) -> dict:
     """장 마감 후: 종가·거시·KB를 종합해 '다음 개장 때 살' 예약 주문을 만든다(LLM 자문 우선).
     목표가는 당일 종가, 추격 허용폭은 +2%. 기존 pending은 새로 만들기 전에 만료 처리."""
-    creds = config.kis_credentials()
+    creds = _dcreds()
     if not creds:
-        return {"ok": False, "reason": "KIS 인증정보 없음"}
+        return {"ok": False, "reason": "브로커 인증정보 없음"}
     universe = store.load_universe()
     prices = store.load_price_series()
     if not universe or not prices:
         return {"ok": False, "reason": "시세 데이터 없음"}
 
-    bal = kis.balance(creds)
+    bal = _dbroker().balance(creds)
     held = {h["ticker"] for h in bal["holdings"]} if bal else set()
     fundamentals = store.load_fundamentals()
     market = _market_read(prices)  # 국면 스냅샷 1회(예약도 동일 규칙 — 거시는 게이트에서만)
@@ -535,19 +554,19 @@ def generate_reservations(dry_run: bool = False) -> dict:
 def execute_reservations(dry_run: bool = False) -> dict:
     """개장 시: pending 예약을 실행. 현재가가 목표가+추격허용폭 이내면 매수, 초과(급등해 놓침)면 스킵.
     (고도화 여지: 놓친 종목 대신 다른 후보 물색 — 지금은 스킵/만료로 단순화)"""
-    creds = config.kis_credentials()
+    creds = _dcreds()
     if not creds:
-        return {"ok": False, "reason": "KIS 인증정보 없음"}
-    if not dry_run and not is_market_hours():
+        return {"ok": False, "reason": "브로커 인증정보 없음"}
+    if not _paper() and not dry_run and not is_market_hours():
         return {"ok": False, "reason": "장 시간이 아님"}
     pending = db.bot_reservations_pending()
     if not pending:
         return {"ok": True, "executed": [], "note": "대기 중인 예약 없음"}
 
     prices = store.load_price_series()
-    bal = kis.balance(creds)
+    bal = _dbroker().balance(creds)
     if bal is None:
-        return {"ok": False, "reason": "KIS 잔고조회 실패"}
+        return {"ok": False, "reason": "잔고조회 실패"}
     cfg = db.bot_config_get()
     cash = bal["cash"]
     target_alloc = bal["total_eval"] * cfg["position_pct"]
