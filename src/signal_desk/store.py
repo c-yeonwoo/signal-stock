@@ -236,6 +236,22 @@ def load_us_price_series() -> dict[str, list[float]]:
     return {t: g["close"].tolist() for t, g in df.groupby("ticker")}
 
 
+def load_us_quotes() -> dict[str, dict]:
+    """US 종목별 최신 거래량·20일 평균 거래량(정렬·표기용). 시총은 데이터 소스 없어 미제공."""
+    if not US_PRICES_FILE.exists():
+        return {}
+    df = pd.read_parquet(US_PRICES_FILE)
+    if df.empty or "volume" not in df.columns:
+        return {}
+    df = df.sort_values(["ticker", "date"])
+    out = {}
+    for t, g in df.groupby("ticker"):
+        vols = g["volume"].tolist()
+        out[t] = {"vol": float(vols[-1]) if vols else None,
+                  "vol_avg": round(sum(vols[-20:]) / len(vols[-20:])) if vols else None}
+    return out
+
+
 def load_us_price_history(ticker: str) -> list[dict]:
     if not US_PRICES_FILE.exists():
         return []
