@@ -34,7 +34,7 @@ _TR_ID = {
     ("demo", "buy"): "VTTC0012U", ("demo", "sell"): "VTTC0011U", ("demo", "balance"): "VTTC8434R",
     ("real", "buy"): "TTTC0012U", ("real", "sell"): "TTTC0011U", ("real", "balance"): "TTTC8434R",
 }
-_TIMEOUT = 20
+_TIMEOUT = 8  # KIS 미도달 시 오래 매달리지 않도록(대시보드 응답성). 실주문 경로는 재시도로 보완.
 _TOKEN_FILE = Path("data/cache/kis_token.json")
 
 
@@ -117,8 +117,8 @@ def _request(path: str, tr_id: str, creds: dict, params: dict, method: str = "GE
         return None
 
 
-def balance(creds: dict | None = None) -> dict | None:
-    """예수금(현금)·총평가금액·보유종목. 실패 시 None."""
+def balance(creds: dict | None = None, retries: int = 3) -> dict | None:
+    """예수금(현금)·총평가금액·보유종목. 실패 시 None. retries=1이면 fail-fast(표시용 — 매매는 3회)."""
     creds = creds or config.kis_credentials()
     if not creds:
         return None
@@ -130,11 +130,12 @@ def balance(creds: dict | None = None) -> dict | None:
         "CTX_AREA_FK100": "", "CTX_AREA_NK100": "",
     }
     body = None
-    for attempt in range(3):  # KIS 간헐 500 대비 재시도
+    for attempt in range(max(1, retries)):  # KIS 간헐 500 대비 재시도(표시용은 1회)
         body = _request("/uapi/domestic-stock/v1/trading/inquire-balance", tr_id, creds, params)
         if body and body.get("rt_cd") == "0":
             break
-        time.sleep(0.5)
+        if attempt < retries - 1:
+            time.sleep(0.5)
     if not body or body.get("rt_cd") != "0":
         log.error("KIS 잔고조회 실패: %s", body.get("msg1") if body else "응답 없음")
         return None

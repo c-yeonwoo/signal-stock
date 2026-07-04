@@ -21,7 +21,7 @@ from fastapi import Form, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from signal_desk import auth, bot, config, db, kb, signalcfg, store, strategy
-from signal_desk.reference import cycle, gurus as gurus_ref, sectors, valuechain
+from signal_desk.reference import cycle, gurus as gurus_ref, sectors, us_ko, valuechain
 from signal_desk.signals import macro, rebalance, regime, valuation
 from signal_desk.signals.engine import (
     SignalConfig, _price_only_components, backtest_summary, combine,
@@ -267,16 +267,21 @@ def _us_signal_items() -> list[dict]:
         return []
     sector_of = {u["ticker"]: u.get("sector") for u in store.load_us_universe()}
     hist = store.load_us_price_series()
+    quotes = store.load_us_quotes()  # 거래량·20일평균(정렬용) — 시총은 소스 없어 미제공
     items = []
     for r in sig.values():
         closes = hist.get(r.ticker) or []
         price = closes[-1] if closes else None
         prev = closes[-2] if len(closes) >= 2 else None
+        q = quotes.get(r.ticker) or {}
         d = asdict(r)
+        d["name"] = us_ko.name_ko(r.ticker, r.name)   # 한글명(주요 종목) + 티커
         d["price"] = price
         d["change_pct"] = round((price / prev - 1) * 100, 2) if (price and prev) else None
-        d["mktcap"] = d["vol"] = d["vol_avg"] = d["per"] = d["pbr"] = None
-        d["sector"] = sector_of.get(r.ticker)
+        d["vol"] = q.get("vol")
+        d["vol_avg"] = q.get("vol_avg")               # 거래량순 정렬 반영
+        d["mktcap"] = d["per"] = d["pbr"] = None       # US 시총·재무는 미수집
+        d["sector"] = us_ko.sector_ko(sector_of.get(r.ticker))  # 한글 섹터
         d["intro"] = d["intro_desc"] = d["kb"] = None
         items.append(d)
     items.sort(key=lambda x: x["score"], reverse=True)

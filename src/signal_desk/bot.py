@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from signal_desk import config, db, kb, llm, signalcfg, store, strategy
 from signal_desk.broker import kis
-from signal_desk.reference import cycle
+from signal_desk.reference import cycle, us_ko
 from signal_desk.signals import advisor, engine, macro, regime, risk
 
 log = logging.getLogger("signal_desk.bot")
@@ -42,6 +42,24 @@ def _today() -> str:
 # 미국 정규장(대략) — 서머타임 EDT 기준 22:30~05:00 KST, EST면 23:30~06:00. 넉넉히 22:30~06:00로 근사.
 _US_OPEN = datetime.time(22, 30)
 _US_CLOSE = datetime.time(6, 0)
+
+# 표시용 잔고 캐시(대시보드 응답성) — KIS 잔고를 짧게 캐시해 반복 조회(탭 열기·성향 변경 등)가 매번
+# 네트워크를 치지 않게 한다. 실주문(run_once)은 캐시를 쓰지 않고 항상 최신 잔고를 조회한다.
+_BAL_TTL = 30
+_bal_cache: dict = {}
+
+
+def _display_balance(kind: str, fetch) -> dict | None:
+    """kind별 잔고를 _BAL_TTL초 캐시. fetch()는 성공 시 dict, 실패 시 None. 실패는 캐시 안 함."""
+    import time as _t
+    hit = _bal_cache.get(kind)
+    if hit and _t.time() - hit[1] < _BAL_TTL:
+        return hit[0]
+    bal = fetch()
+    if bal is not None:
+        _bal_cache[kind] = (bal, _t.time())
+        return bal
+    return hit[0] if hit else None  # 실패 시 직전 캐시라도(있으면)
 
 
 def is_us_market_hours(now: datetime.datetime | None = None) -> bool:
@@ -69,7 +87,7 @@ def us_state(capital: float = 10000.0) -> dict:
     """해외(US) 대시보드 상태 — 국내와 동일 레이아웃용. 잔고(USD)·보유종목 + 판단 미리보기.
     KIS 미도달 시 balance=None(빈 상태). 실주문·야간루프는 미국장 개장 시 연결 예정(현재 미리보기 전용)."""
     creds = config.kis_credentials()
-    bal = kis.overseas_balance(creds) if creds else None
+    bal = _display_balance("us", lambda: kis.overseas_balance(creds)) if creds else None  # 캐시(반복 조회 응답성)
     return {"market": "us", "kis_connected": bal is not None, "balance": bal,
             "us_market_hours": is_us_market_hours(), "preview": us_preview(capital),
             "live_connected": False}
@@ -96,7 +114,7 @@ def us_preview(capital: float = 10000.0, style: str | None = None) -> dict:
         qty = int(tranche_alloc // price)
         if qty < 1:
             continue
-        buys.append({"ticker": s.ticker, "name": s.name, "kind": s.kind, "score": round(s.score, 2),
+        buys.append({"ticker": s.ticker, "name": us_ko.name_ko(s.ticker, s.name), "kind": s.kind, "score": round(s.score, 2),
                      "price": round(price, 2), "qty": qty, "alloc": round(qty * price, 2),
                      "qualitative": bool(s.has_qualitative)})
     return {"ready": True, "style": style, "style_label": strategy.STYLE_LABEL.get(style, style),
@@ -196,7 +214,7 @@ def get_state() -> dict:
     """포트폴리오 탭용 종합 상태 — 봇 설정/현금·평가금액/보유종목/최근거래."""
     cfg = db.bot_config_get()
     creds = config.kis_credentials()
-    bal = kis.balance(creds) if creds else None
+    bal = _display_balance("kospi", lambda: kis.balance(creds, retries=1)) if creds else None  # 캐시·fail-fast
     if bal is not None:
         reconcile_positions(bal)  # 조회 시점에 DB를 KIS 실측과 일치시킴(평단 등)
     return {
