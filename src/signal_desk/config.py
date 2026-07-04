@@ -107,6 +107,24 @@ def youtube_channels() -> list[str]:
     return ids or ["sbs_explained"]
 
 
+def broker_backend() -> str:
+    """국내 자동매매 브로커 백엔드 — 'kis'(모의투자 실계좌) 또는 'paper'(자체 모의계좌).
+    BROKER_BACKEND(.env) 우선, 미설정 시 KIS 자격증명 있으면 kis, 없으면 paper.
+    KIS 비표준 포트(29443/9443)가 막힌 환경에선 BROKER_BACKEND=paper로 자체 모의계좌 사용."""
+    v = (os.environ.get("BROKER_BACKEND") or "").strip().lower()
+    if v in ("kis", "paper"):
+        return v
+    return "kis" if kis_credentials() else "paper"
+
+
+def paper_seed_cash() -> float:
+    """자체 모의계좌 초기 자본(원). PAPER_SEED_CASH(.env) 또는 기본 1,000만원."""
+    try:
+        return float(os.environ.get("PAPER_SEED_CASH", "10000000"))
+    except ValueError:
+        return 10_000_000.0
+
+
 def bot_run_interval_minutes() -> int:
     """자동매매봇 백그라운드 루프 실행 간격(분). 기본 5분(장중 5분마다 시그널 점검·매매)."""
     return int(os.environ.get("BOT_RUN_INTERVAL_MINUTES", "5"))
