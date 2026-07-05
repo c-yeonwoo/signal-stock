@@ -66,7 +66,46 @@ src/signal_desk/
 | `FANDING_TT`·`OUTSTANDING_AUTHORS`·`YOUTUBE_CHANNELS` | KB 외부 소스(세션토큰·작가·채널) |
 | `ANTHROPIC_API_KEY` | LLM 다이제스트·해설·자문(없으면 규칙기반 폴백) |
 
-## 배포 (prod)
+## 배포 — Railway
+
+**데이터 저장소는 파일 기반**이다(별도 DB 서버 불필요):
+
+| 저장 | 형식 | 위치 |
+|---|---|---|
+| 계정·세션·워치리스트·보유·봇 포지션·거래·KB·알림 | **SQLite** | `data/cache/app.db` |
+| 시세·재무·유니버스·거시·거장 스냅샷 | parquet·json | `data/cache/*.{parquet,json}` |
+
+Postgres/MySQL/Redis 안 씀 — SQLite 단일 파일이라 **단일 인스턴스(numReplicas=1)** 로만 운영한다.
+가족 규모엔 충분하고, 나중에 다중 인스턴스가 필요해지면 그때 Postgres로 이관.
+
+### Railway 세팅
+
+1. **레포 연결** → Railway가 `Dockerfile`을 자동 감지(빌드 설정은 `railway.json`).
+2. **Volume 필수** — Railway 컨테이너 파일시스템은 재배포 시 초기화되므로, 볼륨을 **`/app/data`** 에
+   마운트해야 계정·시세·KB가 유지된다. (안 붙이면 재배포마다 전부 날아감)
+3. **환경변수**(Variables 탭) — `.env.example` 참고. 최소 권장:
+   - `APP_ENV=prod` (secure 쿠키), `ADMIN_EMAILS=<내 이메일>`
+   - `KRX_API_KEY`·`DART_API_KEY`·`FRED_API_KEY` (실데이터), `ANTHROPIC_API_KEY` (해설·자문)
+   - `KIS_*`(모의투자, `KIS_ENV=demo`) 또는 `BROKER_BACKEND=paper`
+   - KB 소스: `FANDING_TT`·`FANDING_DEVICE_UID`, `YOUTUBE_API_KEY`, (선택) `OUTSTANDING_*`
+   - `ALPHAVANTAGE_API_KEY` (US 시총·PER)
+   - `PORT`은 Railway가 자동 주입 → 그대로 사용(코드가 `$PORT` 바인딩).
+4. 배포되면 `https://<앱>.up.railway.app` 로 접속.
+
+### 배포 후 실데이터 적재 (버튼)
+
+로그인(첫 가입 계정을 `ADMIN_EMAILS`에 넣으면 관리자) → **관리자 탭**에서:
+
+1. **데이터 갱신**(`/api/refresh`) 1회 — KOSPI 유니버스·시세·재무·거시(FRED)·거장 13F·S&P500 유니버스
+   ·거장 보유 US 시세를 한 번에 적재. **이걸 눌러야 시그널/백테스트/저평가가 실데이터로 채워진다.**
+2. **미주은/아웃스탠딩/유튜브 수집** — KB 외부 소스(수동 1회, 이후 서버가 하루 1회 자동 증분수집).
+3. US 발행주식수·PER는 서버가 하루 20개씩 자동 백필(AV 25콜/일 한도 → S&P500 전량 ~25일).
+
+⚠️ **최초 데이터 갱신 후 절대값 검증**: 샌드박스 캐시엔 종목별 시세 스케일 이슈가 있었으므로, prod에서
+실 KRX 피드로 적재한 뒤 삼성전자 등 종가·시총이 실제와 맞는지 한 번 확인할 것.
+※ 전체 S&P500 US 시세(거장 보유 외) 백필 버튼은 아직 없음 — 필요 시 별도 추가.
+
+## 배포 — 기타(도커/자체 서버)
 
 서버(uvicorn)가 자동매매 루프·KB 일일수집을 in-process로 함께 돌린다 —
 **컨테이너/프로세스를 항상 켜두면 별도 스케줄러가 필요 없다**(단, 프로세스가 죽으면 멈추므로

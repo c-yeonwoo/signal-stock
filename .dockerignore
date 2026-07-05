@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.git/
+.github/
+.idea/
+.DS_Store
+.env
+data/          # 로컬 캐시·SQLite는 이미지에 넣지 않음(prod는 Railway 볼륨 사용)
+tests/
+*.md
+!README.md
