@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from signal_desk import auth, bot, config, db, kb, signalcfg, store, strategy
 from signal_desk.reference import cycle, gurus as gurus_ref, sectors, us_ko, valuechain
-from signal_desk.signals import macro, rebalance, regime, valuation
+from signal_desk.signals import macro, rebalance, regime, scenario, valuation
 from signal_desk.signals.engine import (
     SignalConfig, _price_only_components, backtest_summary, combine,
     compute_indicator_series, evaluate, factor_contribution, signal_zones, walk_forward,
@@ -244,6 +244,19 @@ def rebalance_post(request: Request, data: dict = Body(default={})):
     plan["ready"] = True
     plan["style_label"] = strategy.STYLE_LABEL.get(style, style)
     return plan
+
+
+@app.post("/api/scenario")
+def scenario_post(request: Request, data: dict = Body(default={})):
+    """내 보유종목을 부트스트랩 몬테카를로로 전략별 N년 후 가치 분포로 투영(#9)."""
+    holdings = db.holdings_list(_uid(request))
+    if not holdings:
+        return {"ready": False, "reason": "보유종목을 먼저 입력하세요."}
+    if not store.is_ready():
+        return {"ready": False, "reason": "시세 데이터가 없습니다 — /api/refresh 먼저."}
+    prices = {**store.load_price_series(), **store.load_us_price_series()}
+    years = min(max(int(data.get("years", 3)), 1), 10)
+    return scenario.project(holdings, prices, years=years)
 
 
 # ---------- 시그널 (실데이터, store 캐시 기반) ----------
