@@ -51,3 +51,40 @@ src/signal_desk/
 ## 환경변수
 
 `.env.example` 참고. 실제 키는 `.env`에 넣고 절대 커밋하지 않는다.
+
+주요 운영 변수:
+
+| 변수 | 용도 |
+|---|---|
+| `APP_ENV=prod` | prod 모드 — 세션 쿠키 `secure` 플래그(HTTPS 전제) |
+| `BROKER_BACKEND=paper\|kis` | 자동매매 백엔드. 미설정 시 KIS 자격증명 있으면 kis, 없으면 paper |
+| `KIS_ENV=demo` | KIS 모의투자(권장). 실계좌는 `demo` 외 값 + `ALLOW_REAL_ORDERS=true` 필요 |
+| `ALLOW_REAL_ORDERS` | 실계좌 실주문 이중 안전장치(기본 off) |
+| `BOT_KILL_SWITCH` | 긴급정지 — 켜면 어떤 주문도 안 나감 |
+| `BOT_DAILY_LOSS_LIMIT_PCT=0.08` | 당일 손실 한도 초과 시 신규매수 중단 |
+| `ADMIN_EMAILS` | 관리자(엔진·KB 적재·데이터 갱신) 화이트리스트 |
+| `FANDING_TT`·`OUTSTANDING_AUTHORS`·`YOUTUBE_CHANNELS` | KB 외부 소스(세션토큰·작가·채널) |
+| `ANTHROPIC_API_KEY` | LLM 다이제스트·해설·자문(없으면 규칙기반 폴백) |
+
+## 배포 (prod)
+
+서버(uvicorn)가 자동매매 루프·KB 일일수집을 in-process로 함께 돌린다 —
+**컨테이너/프로세스를 항상 켜두면 별도 스케줄러가 필요 없다**(단, 프로세스가 죽으면 멈추므로
+docker restart 정책이나 systemd로 상시 기동 보장).
+
+```bash
+# 1) 도커
+docker build -t signal-desk .
+docker run -d --name signal-desk --restart unless-stopped \
+  -p 8765:8765 --env-file .env -v signal_desk_data:/app/data signal-desk
+
+# 2) 최초 1회 데이터 적재(컨테이너 안에서) — 실 시세/재무 캐시 생성
+docker exec signal-desk sigdesk fetch
+```
+
+- **HTTPS**: 앞단에 리버스 프록시(Caddy/Nginx)로 TLS 종단 + `APP_ENV=prod`로 secure 쿠키.
+- **DB 백업**: SQLite/parquet 캐시는 `/app/data` 볼륨 → 주기적 스냅샷 백업 권장.
+- **데이터 신뢰성**: 샌드박스 캐시 시세는 종목별 스케일 이슈가 있으므로, prod 최초 `sigdesk fetch`로
+  실 KRX/증권사 피드를 적재하고 절대값(백테스트·시나리오)이 합리적인지 확인할 것.
+- **KB 수집**: 서버가 하루 1회 미주은·오건영·유튜브를 자동수집(증분). `FANDING_TT` 세션토큰은
+  만료 시 `.env` 갱신 필요.

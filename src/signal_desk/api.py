@@ -49,6 +49,24 @@ def _kst_today() -> str:
     return datetime.datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()
 
 
+def _daily_kb_collect():
+    """외부 KB 소스(미주은·오건영·유튜브) 하루 1회 자동수집 — 증분이라 새 글만 적재.
+    best-effort(개별 실패 무시), fanding tt 만료 등은 조용히 스킵. 새 인사이트/시황 반영 위해 캐시 무효화."""
+    if db.kv_get("kb_collect_date") == _kst_today():
+        return
+    got = False
+    for fn in (kb.collect_fanding, kb.collect_outstanding, kb.collect_youtube):
+        try:
+            out = fn()
+            got = got or bool(out.get("imported") or out.get("macro"))
+        except Exception as e:
+            log.warning("KB 자동수집 실패(%s): %s", getattr(fn, "__name__", "?"), type(e).__name__)
+    if got:
+        _signals.cache_clear()
+        _macro.cache_clear()
+    db.kv_set("kb_collect_date", _kst_today())
+
+
 async def _bot_loop():
     """자동매매봇 백그라운드 루프. enabled=False면 조용히 skip(기본 OFF).
 
@@ -57,6 +75,7 @@ async def _bot_loop():
     interval = config.bot_run_interval_minutes() * 60
     while True:
         try:
+            _daily_kb_collect()  # 외부 소스(미주은·오건영·유튜브) 하루 1회 자동수집(봇 on/off 무관)
             if db.bot_config_get()["enabled"]:
                 now = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
                 weekday = now.weekday() < 5
