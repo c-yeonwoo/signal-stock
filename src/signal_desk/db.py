@@ -324,10 +324,14 @@ def bot_position_delete(ticker: str) -> None:
 
 
 def bot_reset() -> None:
-    """봇 포지션·거래내역 전부 삭제(설정은 유지). 과거 유령거래 등 정합성 깨진 상태 초기화용."""
+    """봇 상태 초기화(설정은 유지) — 포지션·거래내역·예약·일일기준선 + 자체 모의계좌(paper) 잔고.
+    paper 백엔드면 현금이 다음 조회 때 초기 시드로 리셋된다(KIS 실계좌 잔고는 건드리지 않음)."""
     c = conn()
     c.execute("DELETE FROM bot_positions")
     c.execute("DELETE FROM bot_trades")
+    c.execute("DELETE FROM bot_reservations")
+    # 자체 모의계좌 상태 + 일일 손실기준선 초기화(paper는 이걸 지우면 seed로 리셋)
+    c.execute("DELETE FROM kv WHERE k='paper_account' OR k LIKE 'bot_day_equity:%'")
     c.commit()
     c.close()
 
