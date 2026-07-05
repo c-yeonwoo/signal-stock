@@ -310,13 +310,16 @@ def _macro_source_summary(title: str, text: str) -> str:
     return text[:600]
 
 
-def collect_youtube(max_per_channel: int = 20, force: bool = False) -> dict:
+def collect_youtube(max_per_channel: int | None = None, force: bool = False) -> dict:
     """유튜브 화이트리스트 채널의 최신 영상을 자막 전문 기반으로 거시 KB(_MARKET)에 적재.
     자막이 있으면 LLM으로 시장 관점 요약(다이제스트용) + 원문(raw) 보관, 없으면 설명으로 폴백.
-    거시 중심(상장사 특정 영상만 종목 KB). 증분: 이미 적재된 URL 스킵."""
+    거시 중심(상장사 특정 영상만 종목 KB). 증분: 이미 적재된 URL 스킵.
+    max_per_channel 미지정 시 config.youtube_max_per_channel() 사용(env로 조절)."""
     from signal_desk.ingest import youtube
     if not config.youtube_key():
         return {"ok": False, "reason": "YOUTUBE_API_KEY 미설정(.env) — 유튜브 수집 건너뜀"}
+    if max_per_channel is None:
+        max_per_channel = config.youtube_max_per_channel()
     seen = set() if force else db.kb_document_urls(source="insight")
     macro, skipped, errors = [], [], []
     # 화이트리스트 채널은 거시·시장 해설 전용 → 제목에 기업명이 있어도 항상 거시 KB로(개별 종목 경로 X).

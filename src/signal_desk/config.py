@@ -107,6 +107,15 @@ def youtube_channels() -> list[str]:
     return ids or ["sbs_explained"]
 
 
+def youtube_max_per_channel() -> int:
+    """유튜브 1회 수집 시 채널당 최대 영상 수. YOUTUBE_MAX_PER_CHANNEL(.env) 또는 기본 20.
+    최초 백필 땐 크게, 평소엔 낮게(증분·하루1회 자동수집이라 평소엔 새 영상만 들어옴)."""
+    try:
+        return max(1, int(os.environ.get("YOUTUBE_MAX_PER_CHANNEL", "20")))
+    except ValueError:
+        return 20
+
+
 def broker_backend() -> str:
     """국내 자동매매 브로커 백엔드 — 'kis'(모의투자 실계좌) 또는 'paper'(자체 모의계좌).
     BROKER_BACKEND(.env) 우선, 미설정 시 KIS 자격증명 있으면 kis, 없으면 paper.
