@@ -787,9 +787,10 @@ def kb_collect_outstanding(data: dict = Body(default={})):
 
 @app.post("/api/kb/collect-youtube")
 def kb_collect_youtube(data: dict = Body(default={})):
-    """유튜브 화이트리스트 채널 최신 영상(자막 전문) → 거시 KB(상장사 특정 영상은 종목 KB) 적재."""
-    n = int(data.get("max_per_channel", 8))
-    out = kb.collect_youtube(max_per_channel=n, force=bool(data.get("force")))
+    """유튜브 화이트리스트 채널 최신 영상(자막 전문) → 거시 KB(상장사 특정 영상은 종목 KB) 적재.
+    max_per_channel 미지정 시 config.youtube_max_per_channel(env) 사용."""
+    n = data.get("max_per_channel")
+    out = kb.collect_youtube(max_per_channel=int(n) if n else None, force=bool(data.get("force")))
     if out.get("ok") and out.get("imported"):
         _signals.cache_clear()
     if out.get("ok") and out.get("macro"):

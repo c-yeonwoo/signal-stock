@@ -1812,7 +1812,7 @@ async function collectYoutube(){
   const el = document.getElementById('fanding-result');
   try {
     const d = await (await fetch('/api/kb/collect-youtube', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ max_per_channel: 20 }) })).json();
+      body: JSON.stringify({}) })).json();  // 서버가 YOUTUBE_MAX_PER_CHANNEL(env, 기본 20) 사용
     if (!d.ok) { el.style.color = 'var(--sell)'; el.textContent = `실패: ${d.reason || ''}`; return; }
     el.style.color = 'var(--sig-buy)';
     el.textContent = `📥 거시 ${(d.macro || []).length} · 종목 ${d.imported.length} · 스킵 ${d.skipped.length}${d.errors.length ? ` · 오류 ${d.errors.length}` : ''}`;
