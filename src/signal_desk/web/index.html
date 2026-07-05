@@ -1494,7 +1494,7 @@ async function previewBot(){
 }
 
 async function resetBot(){
-  if (!confirm('봇 보유종목·거래내역 기록을 초기화할까요? (KIS 계좌 잔고는 그대로, 우리 DB 기록만 삭제 — 과거 유령거래 정리용)')) return;
+  if (!confirm('봇 보유종목·거래내역·예약을 초기화합니다.\n· 자체 모의계좌(paper): 현금이 초기 시드로 리셋됩니다.\n· KIS 연결 시: 실계좌 잔고는 건드리지 않고 우리 DB 기록만 삭제(조회 시 KIS 실측으로 다시 채워짐).\n진행할까요?')) return;
   await fetch('/api/bot/reset', { method: 'POST' });
   document.getElementById('bot-plan').style.display = 'none';
   loadBotState();
