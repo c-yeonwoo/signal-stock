@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -442,6 +443,32 @@ def signals_get(market: str = "kospi"):
         d["opp_tags"] = opportunity.classify(r)  # 기회 유형(#14)
         items.append(d)
     return {"ready": True, "items": items}
+
+
+@app.get("/api/narrative")
+def narrative_get(ticker: str):
+    """시그널 해설 v2(#17) — 근거+KB를 LLM으로 해설(캐시). LLM 미설정/실패 시 규칙기반 v1 폴백."""
+    sig = next((s for s in _signals() if s.ticker == ticker), None) if store.is_ready() else None
+    if sig is None:
+        sig = _us_signals().get(ticker)
+    if sig is None:
+        return {"ok": False, "reason": "해당 종목 시그널이 없습니다."}
+    names = {u["ticker"]: u["name"] for u in store.load_universe()}
+    names.update({u["ticker"]: us_ko.name_ko(u["ticker"], u["name"]) for u in store.load_us_universe()})
+    name = names.get(ticker, sig.name)
+    dg = db.kb_digest_get(ticker)
+    kb_summary = (dg or {}).get("summary") or ""
+    # 데이터 스냅샷 해시로 캐시 키 — 시그널/KB가 바뀌면 자동 무효화
+    h = hashlib.md5(f"{sig.kind}|{round(sig.score, 1)}|{kb_summary}".encode()).hexdigest()[:12]
+    key = f"narrv2:{ticker}:{h}"
+    cached = db.kv_get(key)
+    if cached:
+        return {"ok": True, "narrative": cached, "source": "llm", "cached": True}
+    text = narrative.explain_llm(name, ticker, sig.kind, sig.score, sig.reasons, kb_summary)
+    if text:
+        db.kv_set(key, text)
+        return {"ok": True, "narrative": text, "source": "llm", "cached": False}
+    return {"ok": True, "narrative": sig.narrative, "source": "rule", "cached": False}  # v1 폴백
 
 
 @app.get("/api/backtest")

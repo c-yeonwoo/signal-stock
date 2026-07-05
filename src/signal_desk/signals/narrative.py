@@ -59,3 +59,22 @@ def explain(result) -> str:
         f"{body} 종합 점수 {result.score:+.2f}로 {kind_word} 시그널이며, "
         f"신뢰도는 {conf_word} 편입니다({result.confidence:.2f})."
     )
+
+
+def explain_llm(name: str, ticker: str, kind: str, score: float, reasons: list[str],
+                kb_summary: str = "") -> str | None:
+    """v2 해설 — 시그널 근거(reasons)와 KB 요약만 근거로 LLM이 2~3문장 해설을 생성한다.
+    근거 밖 내용은 지어내지 않도록 강제하고, 투자 권유·수익 보장 표현을 금지한다(규제).
+    LLM 미설정/실패 시 None(호출측이 규칙기반 v1으로 폴백). 캐시는 호출측(api)에서 담당."""
+    from signal_desk import llm
+    if not llm.available():
+        return None
+    reason_lines = "\n".join(f"- {r}" for r in (reasons or [])) or "- (근거 없음)"
+    kb_block = f"\n[KB 정성 요약]\n{kb_summary}\n" if kb_summary else ""
+    system = ("너는 한국 주식 애널리스트다. 아래 '시그널 근거'와 'KB 요약'에 담긴 사실만 사용해 이 종목의 "
+              "현재 시그널을 2~3문장으로 자연스럽게 해설한다. 근거에 없는 수치·전망은 지어내지 마라. "
+              "투자 권유·매수 종용·수익 보장 표현을 쓰지 말고, 관찰된 근거를 중립적으로 설명만 한다.")
+    user = (f"종목: {name}({ticker})\n시그널: {kind} (종합점수 {score:+.2f})\n"
+            f"[시그널 근거]\n{reason_lines}\n{kb_block}\n한국어 해설 2~3문장:")
+    out = llm.complete(system, user, max_tokens=320)
+    return out.strip() if out else None
