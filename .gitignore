@@ -10,3 +10,6 @@ data/cache/*
 !data/cache/.gitkeep
 .idea/
 .DS_Store
+
+build/
+dist/
