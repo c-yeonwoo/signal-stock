@@ -97,6 +97,8 @@
   .macro-chip .mc-value { font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
   .macro-chip .mc-chg { font-size:10px; font-variant-numeric:tabular-nums; }
   .mc-bad { color:var(--sig-sell); } .mc-good { color:var(--sig-buy); } .mc-flat { color:var(--dim); }
+  .opp-badge { display:inline-block; margin-left:5px; padding:1px 6px; border-radius:8px; font-size:10px;
+    background:var(--accent-weak); color:var(--accent); font-weight:600; vertical-align:middle; }
   .macro-callout { margin-top:9px; border:1px solid var(--line); border-left:3px solid var(--accent, #5b8def);
     border-radius:var(--r-md); background:var(--bg); padding:10px 14px; }
   .macro-callout .mco-head { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
@@ -327,6 +329,7 @@
             <option value="volume">거래량순</option>
           </select>
         </div>
+        <div id="sig-opp-filters" class="row" style="gap:6px;flex-wrap:wrap;margin:0 10px 8px"></div>
         <div id="signal-body" class="placeholder" style="padding:32px 0">불러오는 중…</div>
       </div>
       <div class="sig-chart-pane card">
@@ -928,6 +931,10 @@ async function loadMacro(){
 
 let _signalItems = {}, _favorites = new Set(), _backtestByKind = {};
 let _signalRows = null, _indexReady = false, _selectedTicker = null, _sigMarket = 'kospi', _sigLoadSeq = 0;
+// #14 기회 유형 필터
+const OPP_TYPES = ['낙폭과대', '저평가', '모멘텀', '실적우량', '정성호재'];
+let _oppFilter = null;
+function setOppFilter(t){ _oppFilter = (_oppFilter === t) ? null : t; renderSignalList(); }
 
 function switchSignalMarket(m){
   if (_sigMarket === m) return;
@@ -992,7 +999,9 @@ function renderSignalList(){
   const q = (document.getElementById('sig-search').value || '').trim().toLowerCase();
   const sort = document.getElementById('sig-sort').value;
   let rows = _signalRows.filter(r =>
-    !q || r.name.toLowerCase().includes(q) || r.ticker.toLowerCase().includes(q));
+    (!q || r.name.toLowerCase().includes(q) || r.ticker.toLowerCase().includes(q))
+    && (!_oppFilter || (r.opp_tags || []).includes(_oppFilter)));
+  renderOppFilters();
   const nn = (x) => (x == null ? -Infinity : x);  // 값 없으면 뒤로
   if (sort === 'mktcap') rows = [...rows].sort((a, b) => nn(b.mktcap) - nn(a.mktcap));
   else if (sort === 'volume') rows = [...rows].sort((a, b) => nn(b.vol_avg) - nn(a.vol_avg));
@@ -1008,10 +1017,12 @@ function renderSignalList(){
       <td style="font-size:12px;color:var(--dim)">지수</td>
       <td><span class="sig-pill ${mkt.kind}">${kindLabel(mkt.kind)}</span></td>
     </tr>` : '';
+  const badges = (r) => (r.opp_tags || []).map(t =>
+    `<span class="opp-badge">${t}</span>`).join('');
   const body = rows.map(r => `<tr class="clickable-row" data-ticker="${esc(r.ticker)}">
       <td>${star(r.ticker)}</td>
       <td>${esc(r.name)}<div class="sig-metric">${esc(r.ticker)} · ${metric(r)}</div></td>
-      <td style="font-size:12px;color:var(--dim)">${r.sector ? esc(r.sector) : '–'}</td>
+      <td style="font-size:12px;color:var(--dim)">${r.sector ? esc(r.sector) : '–'}${badges(r)}</td>
       <td><span class="sig-pill ${r.kind}">${kindLabel(r.kind)}</span></td>
     </tr>`).join('');
   el.innerHTML = rows.length || indexRow
@@ -1025,6 +1036,17 @@ function renderSignalList(){
   el.querySelectorAll('.fav-star').forEach(s => {
     s.addEventListener('click', (ev) => { ev.stopPropagation(); toggleFav(s.dataset.fav, s); });
   });
+}
+
+// #14 기회 유형 필터 칩 — 현재 시장 시그널 기준 유형별 건수 표시
+function renderOppFilters(){
+  const box = document.getElementById('sig-opp-filters');
+  if (!box || !_signalRows) return;
+  const cnt = {};
+  _signalRows.forEach(r => (r.opp_tags || []).forEach(t => { cnt[t] = (cnt[t] || 0) + 1; }));
+  const chip = (label, val) => `<button class="btn${_oppFilter === val ? ' primary' : ''}" style="padding:3px 10px;font-size:12px"
+      onclick="setOppFilter(${val ? `'${val}'` : 'null'})">${label}${val && cnt[val] ? ` ${cnt[val]}` : ''}</button>`;
+  box.innerHTML = chip('전체', null) + OPP_TYPES.filter(t => cnt[t]).map(t => chip(t, t)).join('');
 }
 
 function selectSignalRow(ticker){
