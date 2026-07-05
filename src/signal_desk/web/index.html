@@ -99,6 +99,10 @@
   .mc-bad { color:var(--sig-sell); } .mc-good { color:var(--sig-buy); } .mc-flat { color:var(--dim); }
   .opp-badge { display:inline-block; margin-left:5px; padding:1px 6px; border-radius:8px; font-size:10px;
     background:var(--accent-weak); color:var(--accent); font-weight:600; vertical-align:middle; }
+  .app-footer { max-width:1240px; margin:32px auto 0; padding:16px 20px 28px; border-top:1px solid var(--line);
+    font-size:11px; color:var(--dim); line-height:1.6; }
+  .app-footer .foot-link { color:var(--accent); cursor:pointer; }
+  .app-footer .foot-link:hover { text-decoration:underline; }
   .macro-callout { margin-top:9px; border:1px solid var(--line); border-left:3px solid var(--accent, #5b8def);
     border-radius:var(--r-md); background:var(--bg); padding:10px 14px; }
   .macro-callout .mco-head { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
@@ -619,6 +623,26 @@
     </div><!-- /#admin-kb -->
   </div><!-- /view-admin -->
 </main>
+
+<footer class="app-footer">
+  <div>⚠️ 본 서비스의 시그널·백테스트·시나리오·자동매매는 <b>투자 참고용</b>이며, 수익을 보장하지 않습니다.
+    모든 투자 판단과 그 결과(손실 포함)의 책임은 이용자 본인에게 있습니다.</div>
+  <div style="margin-top:4px">
+    <span class="foot-link" onclick="openLegal('terms')">이용약관</span> ·
+    <span class="foot-link" onclick="openLegal('privacy')">개인정보처리방침</span> ·
+    <span class="foot-link" onclick="openLegal('disclaimer')">투자 유의사항</span>
+  </div>
+</footer>
+
+<dialog id="legalDlg">
+  <div style="width:560px;max-width:92vw">
+    <div class="row" style="align-items:center;margin-bottom:10px">
+      <h3 id="legal-title" style="margin:0"></h3>
+      <button class="btn" style="margin-left:auto" onclick="document.getElementById('legalDlg').close()">닫기</button>
+    </div>
+    <div id="legal-body" style="max-height:64vh;overflow-y:auto;font-size:13px;line-height:1.7;color:var(--txt)"></div>
+  </div>
+</dialog>
 
 <footer>
   <b>Signal Desk</b>
@@ -1973,6 +1997,34 @@ async function startApp(){
   loadRegime(); loadMacro();  // 시황 리본은 전역 노출 — 어느 탭에서도 보이게 시작 시 로드
   loadAlertBadge();
   routeFromHash() || switchTab('signal');
+}
+
+// ===== 법적 고지(면책·약관·개인정보) =====
+const _LEGAL = {
+  disclaimer: { title: '투자 유의사항', body:
+    `<p>Signal Desk가 제공하는 시그널·백테스트·밸류에이션·시나리오·자동매매 판단은 <b>투자 참고 정보</b>이며,
+     특정 종목의 매수·매도를 권유하거나 수익을 보장하지 않습니다.</p>
+     <p>백테스트 적중률·예상 수익률 등 과거·미래 수치는 확률적 추정이며 실제 결과와 다를 수 있습니다.
+     모든 투자에는 원금 손실 위험이 있고, 최종 투자 판단과 그 결과의 책임은 전적으로 이용자 본인에게 있습니다.</p>
+     <p>자동매매 기능은 이용자가 직접 설정·활성화한 범위에서 동작하며, 시장 상황·체결 지연·시스템 오류로
+     의도와 다른 결과가 발생할 수 있습니다. 실계좌 연동 시 반드시 소액으로 충분히 검증하세요.</p>` },
+  terms: { title: '이용약관', body:
+    `<p>본 서비스는 개인·가족 단위의 투자 참고용으로 제공됩니다. 이용자는 관련 법령과 본 약관을 준수하며,
+     서비스를 통해 얻은 정보를 스스로의 판단과 책임 하에 활용합니다.</p>
+     <p>운영자는 서비스의 정확성·연속성을 보장하지 않으며, 서비스 이용으로 발생한 손해에 대해 관련 법령이
+     허용하는 범위에서 책임을 지지 않습니다.</p>
+     <p class="page-desc">※ 상세 약관 문구는 운영자가 확정합니다(초안).</p>` },
+  privacy: { title: '개인정보처리방침', body:
+    `<p>본 서비스는 로그인(이메일)·보유종목·관심종목 등 서비스 제공에 필요한 최소한의 정보만 수집·보관합니다.</p>
+     <p>수집한 정보는 서비스 제공 목적 외로 이용하거나 제3자에게 제공하지 않으며, 이용자는 언제든 자신의
+     정보 삭제(회원 탈퇴)를 요청할 수 있습니다.</p>
+     <p class="page-desc">※ 상세 처리방침 문구는 운영자가 확정합니다(초안).</p>` },
+};
+function openLegal(kind){
+  const d = _LEGAL[kind] || _LEGAL.disclaimer;
+  document.getElementById('legal-title').textContent = d.title;
+  document.getElementById('legal-body').innerHTML = d.body;
+  document.getElementById('legalDlg').showModal();
 }
 
 // ===== 알림(#16) =====
