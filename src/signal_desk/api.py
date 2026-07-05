@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from signal_desk import auth, bot, config, db, kb, signalcfg, store, strategy
 from signal_desk.reference import cycle, gurus as gurus_ref, sectors, us_ko, valuechain
-from signal_desk.signals import macro, rebalance, regime, scenario, valuation
+from signal_desk.signals import macro, opportunity, rebalance, regime, scenario, valuation
 from signal_desk.signals.engine import (
     SignalConfig, _price_only_components, backtest_summary, combine,
     compute_indicator_series, evaluate, factor_contribution, signal_zones, walk_forward,
@@ -362,6 +362,7 @@ def _us_signal_items() -> list[dict]:
         d["mktcap"] = d["per"] = d["pbr"] = None       # US 시총·재무는 미수집
         d["sector"] = us_ko.sector_ko(sector_of.get(r.ticker))  # 한글 섹터
         d["intro"] = d["intro_desc"] = d["kb"] = None
+        d["opp_tags"] = opportunity.classify(r)  # 기회 유형(#14)
         items.append(d)
     items.sort(key=lambda x: x["score"], reverse=True)
     return items
@@ -396,6 +397,7 @@ def signals_get(market: str = "kospi"):
         d["intro_desc"] = pos["stage_desc"] if pos else None
         dg = db.kb_digest_get(r.ticker)  # KB 정성 다이제스트(뉴스·영상 가공)
         d["kb"] = {"sentiment": dg["sentiment"], "summary": dg["summary"], "points": dg["points"]} if dg else None
+        d["opp_tags"] = opportunity.classify(r)  # 기회 유형(#14)
         items.append(d)
     return {"ready": True, "items": items}
 
