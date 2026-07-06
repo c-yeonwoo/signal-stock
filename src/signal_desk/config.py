@@ -49,6 +49,14 @@ def dart_key() -> str | None:
     return os.environ.get("DART_API_KEY")
 
 
+def toss_credentials() -> tuple[str, str] | None:
+    """토스증권 Open API OAuth2 client credentials. 둘 다 없으면 None(그레이스풀 폴백).
+    시장데이터(시세·종목·경고·캔들)는 계정 헤더 불필요 — 토큰만으로 조회(읽기전용)."""
+    cid = os.environ.get("TOSS_CLIENT_ID")
+    csec = os.environ.get("TOSS_CLIENT_SECRET")
+    return (cid, csec) if (cid and csec) else None
+
+
 def ecos_key() -> str | None:
     """한국은행 ECOS(기준금리·거시지표) API 키."""
     return os.environ.get("ECOS_API_KEY")

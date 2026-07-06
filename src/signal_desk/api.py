@@ -601,8 +601,13 @@ def refresh():
     macro_items = store.fetch_macro()
     store.fetch_macro_kr()  # 한국은행 ECOS 거시(키 있을 때만 채워짐)
     try:
+        store.fetch_warnings([u["ticker"] for u in universe])  # 토스 투자경고/거래정지/VI → 매수 veto(키 있을 때만)
+    except Exception as e:
+        log.warning("토스 경고 수집 실패(무시): %s", type(e).__name__)
+    try:
         store.fetch_gurus()  # 거장 포트폴리오(SEC 13F) — 실패해도 나머지 수집엔 영향 없음
         us_uni = store.fetch_us_universe()  # S&P500 유니버스
+        store.fetch_us_shares_toss([u["ticker"] for u in us_uni])  # 토스 발행주식수 → 전 종목 시총(AV 병목 없이)
         idx = gurus_ref.build_name_index(us_uni)  # 거장 보유종목 → 시세 수집(뱃지용, 스로틀)
         us_tks = sorted({t for g in store.load_gurus() for h in g.get("holdings", [])
                          if (t := gurus_ref.match_ticker(h.get("name", ""), idx))})
