@@ -607,6 +607,7 @@
         <b style="font-size:15px">KB 문서 <span style="color:var(--dim);font-weight:600;font-size:12px">· 지식베이스 원문·요약 (관리자)</span></b>
         <span id="fanding-result" class="stat-label" style="margin:0 0 0 auto"></span>
         <button class="btn" onclick="collectFanding()" style="margin-left:8px">미주은 수집</button>
+        <button class="btn" onclick="collectFanding(90)" style="margin-left:4px" title="지난 3개월 전량 백필(초기 1회)">↩3개월</button>
         <button class="btn" onclick="collectOutstanding()" style="margin-left:8px">아웃스탠딩 수집</button>
         <button class="btn" onclick="collectYoutube()" style="margin-left:8px">유튜브 수집</button>
         <button class="btn" onclick="refreshKb()" style="margin-left:8px">뉴스 갱신</button>
@@ -1779,12 +1780,13 @@ async function refreshKb(){
   } finally { btn.disabled = false; btn.textContent = t; }
 }
 
-async function collectFanding(){
-  const btn = event.target; btn.disabled = true; const t = btn.textContent; btn.textContent = '수집 중…';
+async function collectFanding(backfillDays){
+  const btn = event.target; btn.disabled = true; const t = btn.textContent;
+  btn.textContent = backfillDays ? '백필 중…' : '수집 중…';
   const el = document.getElementById('fanding-result');
   try {
     const d = await (await fetch('/api/kb/collect-fanding', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: 40 }) })).json();
+      body: JSON.stringify(backfillDays ? { backfill_days: backfillDays } : {}) })).json();
     if (!d.ok) { el.style.color = 'var(--sell)'; el.textContent = `실패: ${d.reason || ''}`; return; }
     el.style.color = 'var(--sig-buy)';
     el.textContent = `📥 종목 ${d.imported.length} · 시황 ${(d.macro || []).length} · 스킵 ${d.skipped.length}${d.errors.length ? ` · 오류 ${d.errors.length}` : ''}`;

@@ -47,9 +47,16 @@ def _get(path: str) -> dict | None:
     return body if body.get("bIsResult") else None
 
 
-def post_list(member: str = "mijooeun", limit: int = 20) -> list[dict]:
-    """최신순 포스트 목록 [{post_no, title, type, content_type, published}]."""
-    body = _get(f"post_list?iLimit={limit}&sMemberUrl={member}&sVisibleOnlyOption=F&sSortOrder=recent")
+_MAX_ILIMIT = 20  # fanding 서버가 iLimit>20이면 HTTP 400 → 방어적으로 캡
+
+
+def post_list(member: str = "mijooeun", limit: int = 20, before: int | None = None) -> list[dict]:
+    """최신순 포스트 목록 [{post_no, title, type, content_type, published}]. iLimit은 20까지만 허용됨.
+    before(=이전 페이지 마지막 post_no) 지정 시 그보다 과거 페이지 반환(iLastPostNo 커서 페이징)."""
+    qs = f"post_list?iLimit={min(limit, _MAX_ILIMIT)}&sMemberUrl={member}&sVisibleOnlyOption=F&sSortOrder=recent"
+    if before:
+        qs += f"&iLastPostNo={before}"
+    body = _get(qs)
     if not body:
         return []
     out = []

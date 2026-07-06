@@ -452,20 +452,41 @@ def _fanding_ticker_index() -> list[tuple[str, str, str]]:
 _FANDING_NOISE = ("공지", "결제", "카드 등록", "회원권", "만화책", "질문 수집", "당첨", "이벤트 안내", "안내")
 
 
-def collect_fanding(limit: int = 40, force: bool = False) -> dict:
-    """fanding.kr 미주은 최신 포스트를 훑어 KB로 적재.
+def _fanding_posts(fanding, backfill_days: int) -> list[dict]:
+    """수집 대상 목록. backfill_days=0이면 최신 20건(일상 증분). >0이면 iLastPostNo 커서로
+    그 일수 이전까지 페이지네이션(20건씩, 안전 상한 20페이지). cutoff 이전 글은 제외."""
+    if not backfill_days:
+        return fanding.post_list(limit=20)
+    import datetime
+    cutoff = (datetime.date.today() - datetime.timedelta(days=backfill_days)).isoformat()
+    out: list[dict] = []
+    before = None
+    for _ in range(20):  # 최대 400건
+        page = fanding.post_list(limit=20, before=before)
+        if not page:
+            break
+        out.extend(page)
+        oldest = (page[-1].get("published") or "")[:10]
+        if oldest and oldest < cutoff:  # 이 페이지에서 cutoff 이전 도달 → 중단
+            break
+        before = page[-1].get("post_no")
+    return [p for p in out if (p.get("published") or "")[:10] >= cutoff]  # cutoff 이후만
+
+
+def collect_fanding(limit: int = 20, force: bool = False, backfill_days: int = 0) -> dict:
+    """fanding.kr 미주은 포스트를 훑어 KB로 적재.
     - 종목 특정 글 → 종목 KB(전문가 인사이트, 검증기 게이트).
     - 종목 불특정이라도 시황·거시·시장흐름 해설 → 거시 KB(_MARKET, 시장흐름 트래킹·봇 자문용).
     - 순수 운영·홍보 공지(멤버십·결제·만화책 등)만 폐기.
-    증분 수집: 이미 적재된 URL은 본문 조회·LLM 요약 없이 건너뛴다(force=True면 전량 재수집).
-    반환: {imported:[...], macro:[...], skipped:[...], errors:[...]}."""
+    backfill_days=0(기본): 최신 20건 증분(일상). >0: 그 일수 이전까지 커서 페이징 백필(초기 1회용).
+    증분 수집: 이미 적재된 URL은 본문 조회·LLM 요약 없이 건너뛴다(force=True면 전량 재수집)."""
     from signal_desk.ingest import fanding
     if not config.fanding_cookie():
         return {"ok": False, "reason": "FANDING_TT 미설정(.env) — 자동수집 건너뜀"}
     index = _fanding_ticker_index()
     seen = set() if force else db.kb_document_urls(source="insight")
     imported, macro, skipped, errors = [], [], [], []
-    posts = fanding.post_list(limit=limit)
+    posts = _fanding_posts(fanding, backfill_days)
     if not posts:  # 쿠키는 있는데 목록이 비면 인증 만료·차단 가능성(빈 결과와 구분해 알림)
         return {"ok": False, "reason": "미주은 목록 조회 실패 — tt 세션 토큰 만료 가능. .env의 FANDING_TT 갱신 필요.",
                 "imported": [], "macro": [], "skipped": [], "errors": []}
