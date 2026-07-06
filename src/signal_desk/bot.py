@@ -286,6 +286,94 @@ def _market_signals(market: str, mr: dict):
     return universe, prices, sigs, {u["ticker"]: u["name"] for u in universe}
 
 
+def _conviction_rotate(uid, market, signals, signal_by_ticker, holdings, held_after,
+                       cash, tranche_alloc, tranches, cfg, name_by_ticker, prices, unit,
+                       sells, buys, rotated_out, dry_run):
+    """약한 보유 → 훨씬 강한 후보 교체(보수적). 갱신된 cash 반환. sells/buys/held_after/rotated_out 갱신."""
+    rp = strategy.rotation_params()
+    warned = store.load_warned_tickers() if market == "kr" else set()
+    now_ts = int(datetime.datetime.now(_KST).timestamp())
+    cooldown = rp["cooldown_days"] * 24 * 3600
+    recent_sold = {t["ticker"] for t in db.bot_trades_recent(uid, 50, market)
+                   if t["side"] == "sell" and (now_ts - t["ts"]) < cooldown}
+    cand = sorted([s for s in signals if engine.is_buy(s.kind) and s.ticker not in held_after
+                   and not s.event_risk and s.ticker not in warned
+                   and s.score >= cfg["min_buy_score"] and s.ticker not in recent_sold],
+                  key=lambda s: s.score, reverse=True)
+    if not cand:
+        return cash
+
+    today = datetime.date.today()
+    weak = []  # (score, holding, live_price) — 교체 가능한 약한 보유
+    for h in holdings:
+        sig = signal_by_ticker.get(h["ticker"])
+        if sig is None:
+            continue  # 유니버스 밖 — 판단 불가, 유지
+        pos = db.bot_position_get(uid, h["ticker"])
+        entry = pos["entry_date"] if pos else None
+        if entry:
+            try:
+                if (today - datetime.date.fromisoformat(entry)).days < rp["min_hold_days"]:
+                    continue  # 최소 보유일 미달 → 유지
+            except ValueError:
+                pass
+        live = _live_price(h["ticker"], (prices.get(h["ticker"]) or [h["avg_price"]])[-1])
+        pnl = (live / h["avg_price"] - 1) if h["avg_price"] else 0.0
+        if pnl < rp["max_loss_pct"]:
+            continue  # 큰 손실 중 → 손절선에 맡기고 교체 제외(손실 확정 회피)
+        weak.append((sig.score, h, live))
+    weak.sort(key=lambda x: x[0])
+
+    n_rot = 0
+    for best in cand:
+        if n_rot >= rp["max_per_run"] or not weak:
+            break
+        weak_score, wh, wlive = weak[0]
+        if best.score - weak_score < rp["min_gap"]:
+            break  # 격차 부족(정렬돼 있으니 이후 후보도 부족) → 중단
+        wt, wqty = wh["ticker"], wh["qty"]
+        pl_pct = (wlive / wh["avg_price"] - 1) * 100 if wh["avg_price"] else 0
+        bname = name_by_ticker.get(best.ticker, best.name)
+        snote = (f"컨빅션 로테이션 — 보유 점수 {weak_score:+.2f} 약화, {bname}({best.score:+.2f})로 교체 · "
+                 f"평단 {int(wh['avg_price']):,}→현재 {int(wlive):,}{unit}({pl_pct:+.1f}%) {wqty}주 청산")
+        splan = {"ticker": wt, "name": wh["name"], "qty": wqty, "reason": "ROTATE_OUT", "note": snote, "price": wlive}
+        if not dry_run:
+            if paper.place_order(uid, wt, "sell", wqty, price=wlive, market=market) is None:
+                weak.pop(0)
+                continue
+            db.bot_trade_log(uid, wt, wh["name"], "sell", wqty, wlive, "ROTATE_OUT", "PAPER",
+                             score=weak_score, note=snote, market=market)
+            db.bot_position_delete(uid, wt)
+            splan["ok"] = True
+        cash += wqty * wlive
+        sells.append(splan)
+        rotated_out.add(wt)
+        held_after.discard(wt)
+
+        blive = _live_price(best.ticker, (prices.get(best.ticker) or [0])[-1])
+        alloc = min(tranche_alloc, cash)
+        bqty = int(alloc // blive) if blive else 0
+        if bqty >= 1:
+            bnote = (f"컨빅션 로테이션 진입 — 점수 {best.score:+.2f}(교체된 보유 대비 +{best.score - weak_score:.2f}) · "
+                     f"1/{tranches}트랜치(약 {int(alloc):,}{unit}) ÷ {int(blive):,}{unit} = {bqty}주")
+            bplan = {"ticker": best.ticker, "name": bname, "qty": bqty, "price": blive,
+                     "reason": "ROTATE_IN", "note": bnote, "score": best.score, "ai": False}
+            if not dry_run:
+                if paper.place_order(uid, best.ticker, "buy", bqty, price=blive, name=best.name, market=market) is not None:
+                    db.bot_trade_log(uid, best.ticker, bname, "buy", bqty, blive, "ROTATE_IN", "PAPER",
+                                     score=best.score, note=bnote, market=market)
+                    db.bot_position_upsert(uid, best.ticker, bname, bqty, blive, blive, _today(), market=market)
+                    bplan["ok"] = True
+                else:
+                    bplan["ok"] = False
+            cash -= bqty * blive
+            buys.append(bplan)
+            held_after.add(best.ticker)
+        weak.pop(0)
+        n_rot += 1
+    return cash
+
+
 def run_once(uid: int, dry_run: bool = False, market: str = "kr") -> dict:
     """유저 한 사이클 실행(시장별 페이퍼 계좌) — 공용 시그널로 매매. market: 'kr'|'us'.
     dry_run=True면 주문/DB기록 없이 '무엇을 왜 매매할지' 계획만 계산(미리보기)."""
@@ -411,9 +499,19 @@ def run_once(uid: int, dry_run: bool = False, market: str = "kr") -> dict:
                 cash -= qty * live
             buys.append(plan)
 
+    # 컨빅션 로테이션(보수적) — 포트폴리오가 꽉 찼고, 대기 후보가 보유 최약체보다 '훨씬' 강하면 1건 교체.
+    # 안전장치: 최소보유일 미달·큰 손실 종목은 교체 제외, 방금 판 종목 재매수 쿨다운, 사이클당 max_per_run건.
+    rotated_out: set[str] = set()
+    if not block_new_buys and available_slots == 0:
+        cash = _conviction_rotate(uid, market, signals, signal_by_ticker, bal2["holdings"], held_after,
+                                  cash, tranche_alloc, tranches, cfg, name_by_ticker, prices, unit,
+                                  sells, buys, rotated_out, dry_run)
+
     # ① 분할매수 후속: 보유 중이고 여전히 BUY인데 목표비중 미달인 포지션에 다음 트랜치 추가.
     for h in bal2["holdings"]:
         t = h["ticker"]
+        if t in rotated_out:
+            continue  # 방금 로테이션으로 청산 → 재매수 금지
         sig = signal_by_ticker.get(t)
         if not (sig and engine.is_buy(sig.kind)) or sig.event_risk:
             continue

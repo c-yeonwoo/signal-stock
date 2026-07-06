@@ -1309,7 +1309,7 @@ async function showSignalChart(ticker, item){
 
 // ===== 포트폴리오 — 자동매매봇 =====
 let _botChart = null;
-const _REASON_LABEL = { STOP_LOSS: '손절', TAKE_PROFIT: '익절', TRAILING: '트레일링', SIGNAL: '시그널', RESERVATION: '예약', ADD: '분할추가' };
+const _REASON_LABEL = { STOP_LOSS: '손절', TAKE_PROFIT: '익절', TRAILING: '트레일링', SIGNAL: '시그널', RESERVATION: '예약', ADD: '분할추가', ROTATE_OUT: '로테이션매도', ROTATE_IN: '로테이션매수' };
 
 async function loadBotState(){
   try {
@@ -1343,6 +1343,7 @@ async function loadBotState(){
       + `종가 기준 가상 체결(장 시간 무관) · `
       + `매수 <b>종합점수 ≥ ${cfg.min_buy_score}</b> · 한 사이클 최대 <b>${cfg.max_new_buys_per_run}건</b> · `
       + `최대 <b>${cfg.max_positions}종목</b> · 종목당 <b>${Math.round((cfg.position_pct || 0) * 100)}%</b> 동일가중 · 청산 손절 -7%/익절 +15%/트레일링 -5%`
+      + ` · 슬롯이 꽉 차면 <b>컨빅션 로테이션</b>(약한 보유를 훨씬 강한 후보로 교체, 최소 5일 보유·큰 손실 제외)`
       + (d.daily_loss_limit_pct ? ` · <b>일일 손실 -${Math.round(d.daily_loss_limit_pct * 100)}%</b> 초과 시 신규매수 중단` : '');
 
     document.querySelectorAll('#style-toggle button').forEach(b => b.classList.toggle('on', b.dataset.style === cfg.trading_style));

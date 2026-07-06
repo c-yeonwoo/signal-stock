@@ -37,6 +37,21 @@ PRESETS = {
 # 추세 국면(여기선 익절을 넓게 두고 트레일링으로 수익 극대화). 그 외(횡보·약세·조정)는 중간 실현.
 TRENDING_REGIMES = ("강세", "과열")
 
+# 컨빅션 로테이션(보수적) — 포트폴리오가 꽉 찼을 때, 약한 보유를 '훨씬 강한' 후보로만 1건 교체.
+# 잦은 교체·왕복손실·손실확정을 막는 안전장치를 함께 둔다(웬만하면 유지, 확실히 우월할 때만 갈아탐).
+ROTATION = {
+    "min_gap": 1.0,          # (후보 최고점수 − 보유 최저점수) 격차가 이 이상일 때만 교체
+    "min_hold_days": 5,      # 최소 보유일 — 이전에는 교체 대상에서 제외(잦은 교체 방지)
+    "max_loss_pct": -0.03,   # 이보다 크게 손실 중인 보유는 교체 제외(손절선에 맡김 — 손실 확정 회피)
+    "cooldown_days": 5,      # 방금 판 종목 재매수 금지 기간(핑퐁 방지)
+    "max_per_run": 1,        # 한 사이클 최대 교체 건수
+}
+
+
+def rotation_params() -> dict:
+    """컨빅션 로테이션 정책(보수적, 전 성향 공통)."""
+    return dict(ROTATION)
+
 
 def entry_tranches(style: str) -> int:
     return int(preset(style)["entry_tranches"])
