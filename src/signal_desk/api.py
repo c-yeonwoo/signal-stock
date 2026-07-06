@@ -24,7 +24,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from signal_desk import auth, bot, config, db, kb, signalcfg, store, strategy
 from signal_desk.reference import cycle, gurus as gurus_ref, sectors, us_ko, valuechain
-from signal_desk.signals import macro, opportunity, rebalance, regime, scenario, valuation
+from signal_desk.signals import macro, opportunity, rebalance, regime, scenario, target, valuation
 from signal_desk.signals.engine import (
     SignalConfig, _price_only_components, backtest_summary, combine,
     compute_indicator_series, evaluate, factor_contribution, signal_zones, walk_forward,
@@ -475,6 +475,8 @@ def signals_get(market: str = "kospi"):
     items = []
     quotes = _quotes()
     fundamentals = store.load_fundamentals()
+    med_per = target.median_per(fundamentals)   # 목표가(밸류 정상화) 기준 — 루프 밖 1회
+    price_series = store.load_price_series()      # 기술적 저항 산정용
     for r in _signals():
         d = asdict(r)
         q = quotes.get(r.ticker) or {}
@@ -493,6 +495,7 @@ def signals_get(market: str = "kospi"):
         dg = db.kb_digest_get(r.ticker)  # KB 정성 다이제스트(뉴스·영상 가공)
         d["kb"] = {"sentiment": dg["sentiment"], "summary": dg["summary"], "points": dg["points"]} if dg else None
         d["opp_tags"] = opportunity.classify(r)  # 기회 유형(#14)
+        d["target"] = target.compute(d["price"], f.get("per"), med_per, price_series.get(r.ticker))  # 참고 목표가
         items.append(d)
     return {"ready": True, "items": items}
 
