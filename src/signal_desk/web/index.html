@@ -1944,15 +1944,17 @@ async function loadKbDocs(){
       const p = (n) => String(n).padStart(2, '0');
       return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())} ${p(dt.getHours())}:${p(dt.getMinutes())}`;
     };
-    const rows = d.documents.map(doc => `<tr${doc.status === 'pending' ? ' style="opacity:.6"' : ''}>
+    const rows = d.documents.map(doc => `<tr${doc.status === 'pending' ? ' style="opacity:.6;vertical-align:top"' : ' style="vertical-align:top"'}>
       <td style="white-space:nowrap">${classBadge(doc.doc_class)}${pendBadge(doc.status)}</td>
-      <td>${esc(doc.name || doc.ticker)}<div style="color:var(--dim);font-size:11px">${esc(doc.ticker)} · ${esc(doc.source || '')}</div></td>
-      <td>${doc.url ? `<a href="${esc(doc.url)}" target="_blank" rel="noopener">${esc(doc.title || '(제목없음)')}</a>` : esc(doc.title || '(제목없음)')}
+      <td style="white-space:normal">${esc(doc.name || doc.ticker)}<div style="color:var(--dim);font-size:11px">${esc(doc.ticker)} · ${esc(doc.source || '')}</div></td>
+      <td style="white-space:normal">${doc.url ? `<a href="${esc(doc.url)}" target="_blank" rel="noopener">${esc(doc.title || '(제목없음)')}</a>` : esc(doc.title || '(제목없음)')}
         <div style="color:var(--dim);font-size:11px;margin-top:2px">${esc((doc.summary || '').slice(0, 100))}</div></td>
-      <td class="num" style="white-space:nowrap;font-size:11px;color:var(--dim)" title="발행: ${esc((doc.published || '').slice(0, 16)) || '-'}">${fmtDt(doc.fetched)}</td>
+      <td style="white-space:nowrap;font-size:11px;color:var(--dim)" title="발행: ${esc((doc.published || '').slice(0, 16)) || '-'}">${fmtDt(doc.fetched)}</td>
     </tr>`).join('');
     el.className = '';
-    el.innerHTML = `<table class="dtable"><thead><tr><th>유형</th><th>종목</th><th>문서</th><th class="num">수집일시</th></tr></thead><tbody>${rows}</tbody></table>`;
+    el.innerHTML = `<table class="dtable" style="table-layout:fixed;width:100%">
+      <colgroup><col style="width:88px"><col style="width:22%"><col><col style="width:104px"></colgroup>
+      <thead><tr><th>유형</th><th>종목</th><th>문서</th><th>수집일시</th></tr></thead><tbody>${rows}</tbody></table>`;
   } catch (e) { el.textContent = '불러오지 못했습니다.'; }
 }
 
