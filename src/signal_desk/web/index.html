@@ -356,6 +356,7 @@
         <div id="signal-quote" class="sig-quote" style="display:none"></div>
         <div id="signal-intro" style="display:none;font-size:12px;color:var(--dim);margin:0 0 6px;line-height:1.5"></div>
         <div id="signal-backtest" style="display:none;font-size:11px;margin:0 0 8px"></div>
+        <div id="signal-target" style="display:none;font-size:12px;margin:0 0 8px"></div>
         <div id="signal-narrative" class="placeholder" style="display:none;background:var(--accent-weak);
           border-radius:var(--r-md);padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:10px;text-align:left"></div>
         <div id="signal-kb" style="display:none;font-size:12px;margin-bottom:8px;padding:8px 11px;
@@ -1175,6 +1176,22 @@ async function showSignalChart(ticker, item){
     btEl.innerHTML = `📊 과거 <b>${kindLabel(item.kind)}</b> 시그널 적중률 <b style="color:${wrColor}">${fmtNum(wr, 1)}%</b>`
       + `${bt.avg_ret_5d != null ? ` · 5일 평균 ${bt.avg_ret_5d > 0 ? '+' : ''}${fmtNum(bt.avg_ret_5d, 2)}%` : ''} <span style="color:var(--dim-2)">(표본 ${bt.n}, 가격기반 백테스트)</span>`;
   } else btEl.style.display = 'none';
+  const tgEl = document.getElementById('signal-target');
+  const tg = item && item.target;
+  if (tg && _sigMarket !== 'us') {
+    const parts = [];
+    if (tg.value_target != null) {
+      const up = tg.value_upside_pct, c = up > 0 ? 'var(--sig-buy)' : up < 0 ? 'var(--sig-sell)' : 'var(--dim)';
+      parts.push(`밸류 정상화 <b>${fmtNum(tg.value_target, 0)}원</b> <span style="color:${c}">(${up > 0 ? '+' : ''}${fmtNum(up, 1)}%)</span>`);
+    }
+    if (tg.resistance != null) {
+      const up = tg.resistance_upside_pct, c = up > 0 ? 'var(--sig-buy)' : 'var(--dim)';
+      parts.push(`기술적 저항 <b>${fmtNum(tg.resistance, 0)}원</b> <span style="color:${c}">(${up > 0 ? '+' : ''}${fmtNum(up, 1)}%)</span>`);
+    }
+    tgEl.style.display = '';
+    tgEl.innerHTML = `🎯 <span style="color:var(--dim)">참고 목표가</span> ${parts.join(' · ')}`
+      + ` <span style="color:var(--dim-2);font-size:11px">· 추정·참고일 뿐 보장 아님(${esc((tg.basis || []).join(', '))})</span>`;
+  } else tgEl.style.display = 'none';
   const narrEl = document.getElementById('signal-narrative');
   if (item && item.narrative) {
     narrEl.style.display = ''; narrEl.textContent = item.narrative;   // v1(규칙) 즉시 표시
