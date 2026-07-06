@@ -725,14 +725,14 @@ def bot_reset(request: Request):
 
 @app.post("/api/bot/reserve")
 def bot_reserve(request: Request, data: dict = Body(default={})):
-    """내 봇 예약 주문 생성(수동 트리거). dry_run이면 계획만."""
-    return bot.generate_reservations(_uid(request), dry_run=bool(data.get("dry_run")))
+    """내 봇 예약 주문 생성(수동 트리거, 시장별). dry_run이면 계획만."""
+    return bot.generate_reservations(_uid(request), dry_run=bool(data.get("dry_run")), market=_mkt(data.get("market")))
 
 
 @app.post("/api/bot/execute-reservations")
 def bot_execute_reservations(request: Request, data: dict = Body(default={})):
-    """내 봇 대기 예약을 지금 실행(수동 트리거). dry_run이면 계획만."""
-    return bot.execute_reservations(_uid(request), dry_run=bool(data.get("dry_run")))
+    """내 봇 대기 예약을 지금 실행(수동 트리거, 시장별). dry_run이면 계획만."""
+    return bot.execute_reservations(_uid(request), dry_run=bool(data.get("dry_run")), market=_mkt(data.get("market")))
 
 
 @app.get("/api/bot/decisions")

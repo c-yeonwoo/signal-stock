@@ -238,7 +238,7 @@ def get_state(uid: int, market: str = "kr") -> dict:
         "pnl_pct": bal.get("pnl_pct"),
         "positions": db.bot_positions_all(uid, market),
         "recent_trades": db.bot_trades_recent(uid, 20, market),
-        "reservations": db.bot_reservations_pending(uid) if market == "kr" else [],
+        "reservations": db.bot_reservations_pending(uid, market),
         "llm_enabled": llm.available(),
         "style_label": strategy.STYLE_LABEL.get(cfg["trading_style"], cfg["trading_style"]),
         "styles": [{"key": k, "label": strategy.STYLE_LABEL[k], "desc": strategy.STYLE_DESC[k]} for k in strategy.STYLES],
@@ -464,23 +464,22 @@ def run_once(uid: int, dry_run: bool = False, market: str = "kr") -> dict:
     }
 
 
-def generate_reservations(uid: int, dry_run: bool = False) -> dict:
-    """유저: 종가·거시·KB를 종합해 '다음 개장 때 살' 예약을 만든다(LLM 자문 우선)."""
-    universe = store.load_universe()
-    prices = store.load_price_series()
+def generate_reservations(uid: int, dry_run: bool = False, market: str = "kr") -> dict:
+    """유저: 종가·거시·KB를 종합해 '다음 개장 때 살' 예약을 만든다(LLM 자문 우선). 시장별(kr|us)."""
+    unit = "$" if market == "us" else "원"
+    kr_prices = store.load_price_series()
+    mr = _market_read(kr_prices) if kr_prices else {"eff_cfg": None, "context": {}}
+    universe, prices, signals, name_by_ticker = _market_signals(market, mr)
     if not universe or not prices:
         return {"ok": False, "reason": "시세 데이터 없음"}
 
-    bal = paper.balance(uid)
+    bal = paper.balance(uid, market)
     held = {h["ticker"] for h in bal["holdings"]}
-    fundamentals = store.load_fundamentals()
-    market = _market_read(prices)
-    signals = engine.evaluate(universe, prices, fundamentals, config=market["eff_cfg"], sentiment=kb.sentiment_map())
     cfg = _cfg(uid)
     slots = min(max(0, cfg["max_positions"] - len(held)), cfg["max_new_buys_per_run"])
-    context = market["context"]
+    context = mr["context"]
 
-    warned = store.load_warned_tickers()  # 토스 경고 종목 매수 veto
+    warned = store.load_warned_tickers() if market == "kr" else set()  # 토스 경고 veto(국내)
     strong = [s for s in signals if engine.is_buy(s.kind) and s.score >= cfg["min_buy_score"]
               and s.ticker not in held and not s.event_risk and s.ticker not in warned]
     pool = sorted(strong, key=lambda s: s.score, reverse=True)[:max(slots * 3, 6)]
@@ -498,28 +497,30 @@ def generate_reservations(uid: int, dry_run: bool = False) -> dict:
 
     reservations = []
     if not dry_run:
-        db.bot_reservations_clear_pending(uid)
+        db.bot_reservations_clear_pending(uid, market)
     for s, rationale in chosen:
         closes = prices.get(s.ticker)
         if not closes:
             continue
         target = closes[-1]
+        name = name_by_ticker.get(s.ticker, s.name)
         reason = (f"[AI] {rationale}" if rationale else f"점수 {s.score:+.2f}") + \
-                 f" · 국면 {context.get('regime')}/거시 {context.get('macro_bias')} · 목표가 {int(target):,}원(+{_MAX_CHASE_PCT*100:.0f}%까지 추격)"
-        reservations.append({"ticker": s.ticker, "name": s.name, "side": "buy", "target_price": target, "reason": reason})
+                 f" · 국면 {context.get('regime')}/거시 {context.get('macro_bias')} · 목표가 {int(target):,}{unit}(+{_MAX_CHASE_PCT*100:.0f}%까지 추격)"
+        reservations.append({"ticker": s.ticker, "name": name, "side": "buy", "target_price": target, "reason": reason})
         if not dry_run:
-            db.bot_reservation_add(uid, s.ticker, s.name, "buy", target, _MAX_CHASE_PCT, reason)
-    return {"ok": True, "dry_run": dry_run, "context": context, "reservations": reservations}
+            db.bot_reservation_add(uid, s.ticker, name, "buy", target, _MAX_CHASE_PCT, reason, market=market)
+    return {"ok": True, "dry_run": dry_run, "market": market, "context": context, "reservations": reservations}
 
 
-def execute_reservations(uid: int, dry_run: bool = False) -> dict:
-    """유저: pending 예약을 실행. 현재가가 목표가+추격허용폭 이내면 매수, 초과면 스킵."""
-    pending = db.bot_reservations_pending(uid)
+def execute_reservations(uid: int, dry_run: bool = False, market: str = "kr") -> dict:
+    """유저: pending 예약을 실행(시장별). 현재가가 목표가+추격허용폭 이내면 매수, 초과면 스킵."""
+    unit = "$" if market == "us" else "원"
+    pending = db.bot_reservations_pending(uid, market)
     if not pending:
-        return {"ok": True, "executed": [], "note": "대기 중인 예약 없음"}
+        return {"ok": True, "market": market, "executed": [], "note": "대기 중인 예약 없음"}
 
-    prices = store.load_price_series()
-    bal = paper.balance(uid)
+    prices = store.load_us_price_series() if market == "us" else store.load_price_series()
+    bal = paper.balance(uid, market)
     cfg = _cfg(uid)
     cash = bal["cash"]
     target_alloc = bal["total_eval"] * cfg["position_pct"]
@@ -534,7 +535,7 @@ def execute_reservations(uid: int, dry_run: bool = False) -> dict:
         ceiling = r["target_price"] * (1 + r["max_chase_pct"])
         if price > ceiling:
             executed.append({"ticker": r["ticker"], "name": r["name"], "status": "skipped_price",
-                             "note": f"현재가 {int(price):,}원 > 상한 {int(ceiling):,}원 — 추격 안 함"})
+                             "note": f"현재가 {int(price):,}{unit} > 상한 {int(ceiling):,}{unit} — 추격 안 함"})
             if not dry_run:
                 db.bot_reservation_resolve(r["id"], "skipped_price")
             continue
@@ -544,12 +545,12 @@ def execute_reservations(uid: int, dry_run: bool = False) -> dict:
             if not dry_run:
                 db.bot_reservation_resolve(r["id"], "skipped_cash")
             continue
-        note = f"예약 실행 — {r['reason']} · 현재가 {int(price):,}원 × {qty}주"
+        note = f"예약 실행 — {r['reason']} · 현재가 {int(price):,}{unit} × {qty}주"
         if not dry_run:
-            result = paper.place_order(uid, r["ticker"], "buy", qty, price=price, name=r["name"])
+            result = paper.place_order(uid, r["ticker"], "buy", qty, price=price, name=r["name"], market=market)
             if result is not None:
-                db.bot_trade_log(uid, r["ticker"], r["name"], "buy", qty, price, "RESERVATION", result["order_no"], note=note)
-                db.bot_position_upsert(uid, r["ticker"], r["name"], qty, price, price, _today())
+                db.bot_trade_log(uid, r["ticker"], r["name"], "buy", qty, price, "RESERVATION", result["order_no"], note=note, market=market)
+                db.bot_position_upsert(uid, r["ticker"], r["name"], qty, price, price, _today(), market=market)
                 db.bot_reservation_resolve(r["id"], "filled")
                 cash -= qty * price
                 executed.append({"ticker": r["ticker"], "name": r["name"], "status": "filled", "qty": qty, "note": note})
@@ -558,4 +559,4 @@ def execute_reservations(uid: int, dry_run: bool = False) -> dict:
                 executed.append({"ticker": r["ticker"], "name": r["name"], "status": "order_failed"})
         else:
             executed.append({"ticker": r["ticker"], "name": r["name"], "status": "would_fill", "qty": qty, "note": note})
-    return {"ok": True, "dry_run": dry_run, "executed": executed}
+    return {"ok": True, "dry_run": dry_run, "market": market, "executed": executed}

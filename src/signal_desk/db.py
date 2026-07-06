@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS bot_decisions(id INTEGER PRIMARY KEY AUTOINCREMENT, t
     action TEXT, score REAL, rationale TEXT, context TEXT, decided_price REAL, ts INTEGER,
     outcome_pct REAL, outcome_ts INTEGER);
 CREATE TABLE IF NOT EXISTS bot_reservations(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER, ticker TEXT, name TEXT,
-    side TEXT, target_price REAL, max_chase_pct REAL, reason TEXT, status TEXT, created INTEGER, resolved INTEGER);
+    side TEXT, target_price REAL, max_chase_pct REAL, reason TEXT, status TEXT, created INTEGER, resolved INTEGER,
+    market TEXT NOT NULL DEFAULT 'kr');
 CREATE TABLE IF NOT EXISTS holdings(uid INTEGER, ticker TEXT, qty REAL, avg_price REAL, ts INTEGER,
     PRIMARY KEY(uid, ticker));
 CREATE TABLE IF NOT EXISTS alert_state(uid INTEGER, ticker TEXT, last_kind TEXT, updated INTEGER,
@@ -73,6 +74,8 @@ def _migrate(c: sqlite3.Connection) -> None:
         c.execute("ALTER TABLE bot_positions ADD COLUMN market TEXT NOT NULL DEFAULT 'kr'")
     if "market" not in {r[1] for r in c.execute("PRAGMA table_info(bot_trades)").fetchall()}:
         c.execute("ALTER TABLE bot_trades ADD COLUMN market TEXT NOT NULL DEFAULT 'kr'")
+    if "market" not in {r[1] for r in c.execute("PRAGMA table_info(bot_reservations)").fetchall()}:
+        c.execute("ALTER TABLE bot_reservations ADD COLUMN market TEXT NOT NULL DEFAULT 'kr'")
     if "seed_cash_us" not in {r[1] for r in c.execute("PRAGMA table_info(user_bot)").fetchall()}:
         c.execute("ALTER TABLE user_bot ADD COLUMN seed_cash_us REAL NOT NULL DEFAULT 10000")
     dcols = {r[1] for r in c.execute("PRAGMA table_info(kb_digest)").fetchall()}
@@ -541,19 +544,19 @@ def bot_decision_set_outcome(decision_id: int, outcome_pct: float) -> None:
 
 # ---------- bot_reservations (마감 후 예약 주문 — 유저별) ----------
 def bot_reservation_add(uid: int, ticker: str, name: str, side: str, target_price: float,
-                        max_chase_pct: float, reason: str) -> None:
+                        max_chase_pct: float, reason: str, market: str = "kr") -> None:
     c = conn()
-    c.execute("INSERT INTO bot_reservations(uid,ticker,name,side,target_price,max_chase_pct,reason,status,created) "
-              "VALUES(?,?,?,?,?,?,?, 'pending', ?)",
-              (uid, ticker, name, side, target_price, max_chase_pct, reason, int(time.time())))
+    c.execute("INSERT INTO bot_reservations(uid,ticker,name,side,target_price,max_chase_pct,reason,status,created,market) "
+              "VALUES(?,?,?,?,?,?,?, 'pending', ?, ?)",
+              (uid, ticker, name, side, target_price, max_chase_pct, reason, int(time.time()), market))
     c.commit()
     c.close()
 
 
-def bot_reservations_pending(uid: int) -> list[dict]:
+def bot_reservations_pending(uid: int, market: str = "kr") -> list[dict]:
     c = conn()
     rows = c.execute("SELECT id,ticker,name,side,target_price,max_chase_pct,reason,created FROM bot_reservations "
-                     "WHERE uid=? AND status='pending' ORDER BY id", (uid,)).fetchall()
+                     "WHERE uid=? AND market=? AND status='pending' ORDER BY id", (uid, market)).fetchall()
     c.close()
     return [{"id": i, "ticker": t, "name": n, "side": s, "target_price": tp, "max_chase_pct": mc,
              "reason": r, "created": cr} for i, t, n, s, tp, mc, r, cr in rows]
@@ -566,11 +569,11 @@ def bot_reservation_resolve(res_id: int, status: str) -> None:
     c.close()
 
 
-def bot_reservations_clear_pending(uid: int) -> None:
-    """유저의 미실행 예약 정리(새 마감 분석 전 pending을 만료 처리)."""
+def bot_reservations_clear_pending(uid: int, market: str = "kr") -> None:
+    """유저의 미실행 예약 정리(시장별 — 새 마감 분석 전 pending을 만료 처리)."""
     c = conn()
-    c.execute("UPDATE bot_reservations SET status='expired', resolved=? WHERE uid=? AND status='pending'",
-              (int(time.time()), uid))
+    c.execute("UPDATE bot_reservations SET status='expired', resolved=? WHERE uid=? AND market=? AND status='pending'",
+              (int(time.time()), uid, market))
     c.commit()
     c.close()
 
