@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import urllib.error
 import urllib.request
 
 from signal_desk import config
@@ -35,6 +36,11 @@ def _get(path: str) -> dict | None:
     try:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        # 401/403 = tt 세션 토큰 만료·무효(가장 흔함). 상태코드를 남겨 진단 가능하게.
+        hint = " — tt 세션 토큰 만료 가능(FANDING_TT 갱신 필요)" if e.code in (401, 403) else ""
+        log.warning("fanding 요청 실패(%s): HTTP %s%s", path, e.code, hint)
+        return None
     except Exception as e:
         log.warning("fanding 요청 실패(%s): %s", path, type(e).__name__)
         return None

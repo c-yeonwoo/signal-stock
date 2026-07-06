@@ -465,7 +465,11 @@ def collect_fanding(limit: int = 40, force: bool = False) -> dict:
     index = _fanding_ticker_index()
     seen = set() if force else db.kb_document_urls(source="insight")
     imported, macro, skipped, errors = [], [], [], []
-    for post in fanding.post_list(limit=limit):
+    posts = fanding.post_list(limit=limit)
+    if not posts:  # 쿠키는 있는데 목록이 비면 인증 만료·차단 가능성(빈 결과와 구분해 알림)
+        return {"ok": False, "reason": "미주은 목록 조회 실패 — tt 세션 토큰 만료 가능. .env의 FANDING_TT 갱신 필요.",
+                "imported": [], "macro": [], "skipped": [], "errors": []}
+    for post in posts:
         title = post.get("title") or ""
         url = fanding.post_url(post.get("post_no"))
         if url in seen:
