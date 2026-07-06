@@ -763,9 +763,9 @@ def kb_refresh():
 
 @app.post("/api/kb/collect-fanding")
 def kb_collect_fanding(data: dict = Body(default={})):
-    """fanding.kr 미주은 최신 포스트 → 종목 특정분만 전문가 인사이트 KB로 적재(수동 트리거)."""
-    limit = int(data.get("limit", 15))
-    out = kb.collect_fanding(limit=limit, force=bool(data.get("force")))
+    """fanding.kr 미주은 포스트 → KB 적재(수동 트리거). backfill_days>0이면 그 일수 이전까지 백필."""
+    out = kb.collect_fanding(force=bool(data.get("force")),
+                             backfill_days=int(data.get("backfill_days", 0)))
     if out.get("ok") and out.get("imported"):
         _signals.cache_clear()  # 새 정성 인사이트 반영
     if out.get("ok") and out.get("macro"):
