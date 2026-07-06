@@ -155,3 +155,36 @@ def test_max_new_buys_caps(tmp_path, monkeypatch):
     _seed(100_000.0)
     out = bot.run_once(UID)
     assert [b["ticker"] for b in out["buys"]] == ["T4", "T3"]   # 상위 2개만
+
+
+def test_conviction_rotation_swaps_weak_for_strong(tmp_path, monkeypatch):
+    """포트폴리오가 꽉 찼을 때, 약한 보유(HOLD)를 훨씬 강한 후보(BUY)로 교체."""
+    monkeypatch.chdir(tmp_path)
+    _setup(monkeypatch, [{"ticker": "WEAK", "name": "약"}, {"ticker": "STRONG", "name": "강"}],
+           {"WEAK": [100.0, 100.0], "STRONG": [50.0, 50.0]},
+           [_sig("WEAK", "약", "HOLD", 0.2), _sig("STRONG", "강", "BUY", 2.0)],
+           max_positions=1, min_buy_score=1.0)  # 슬롯 1개 → WEAK 보유로 꽉 참
+    _seed(0.0, {"WEAK": {"name": "약", "qty": 100, "avg_price": 100.0}})
+    db.bot_position_upsert(UID, "WEAK", "약", 100, 100.0, 100.0, "2020-01-01")  # 최소 보유일 경과
+
+    out = bot.run_once(UID)
+    assert out["ok"]
+    assert any(s["reason"] == "ROTATE_OUT" and s["ticker"] == "WEAK" for s in out["sells"])
+    assert any(b["reason"] == "ROTATE_IN" and b["ticker"] == "STRONG" for b in out["buys"])
+    tickers = {p["ticker"] for p in db.bot_positions_all(UID, "kr")}
+    assert "WEAK" not in tickers and "STRONG" in tickers  # 교체 완료
+
+
+def test_rotation_skips_within_min_hold(tmp_path, monkeypatch):
+    """최소 보유일 미달이면 더 강한 후보가 있어도 교체하지 않는다(잦은 교체 방지)."""
+    monkeypatch.chdir(tmp_path)
+    _setup(monkeypatch, [{"ticker": "WEAK", "name": "약"}, {"ticker": "STRONG", "name": "강"}],
+           {"WEAK": [100.0, 100.0], "STRONG": [50.0, 50.0]},
+           [_sig("WEAK", "약", "HOLD", 0.2), _sig("STRONG", "강", "BUY", 2.0)],
+           max_positions=1, min_buy_score=1.0)
+    _seed(0.0, {"WEAK": {"name": "약", "qty": 100, "avg_price": 100.0}})
+    db.bot_position_upsert(UID, "WEAK", "약", 100, 100.0, 100.0, bot._today())  # 오늘 진입 → 보유일 0
+
+    out = bot.run_once(UID)
+    assert not any(s["reason"] == "ROTATE_OUT" for s in out["sells"])   # 교체 없음
+    assert {p["ticker"] for p in db.bot_positions_all(UID, "kr")} == {"WEAK"}
