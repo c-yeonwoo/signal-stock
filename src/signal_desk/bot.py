@@ -345,7 +345,9 @@ def run_once(uid: int, dry_run: bool = False) -> dict:
     tranches = strategy.entry_tranches(cfg["trading_style"])  # ① 분할매수 회차
     tranche_alloc = target_alloc / tranches
     if slots > 0:
-        eligible = [s for s in signals if engine.is_buy(s.kind) and s.ticker not in held_after and not s.event_risk]
+        warned = store.load_warned_tickers()  # 토스 투자경고/거래정지/과열/VI → 매수 veto
+        eligible = [s for s in signals if engine.is_buy(s.kind) and s.ticker not in held_after
+                    and not s.event_risk and s.ticker not in warned]
         strong = [s for s in eligible if s.score >= cfg["min_buy_score"]]
         skipped_weak = len(eligible) - len(strong)
         pool = sorted(strong, key=lambda s: s.score, reverse=True)[:max(slots * 3, 6)]
@@ -462,8 +464,9 @@ def generate_reservations(uid: int, dry_run: bool = False) -> dict:
     slots = min(max(0, cfg["max_positions"] - len(held)), cfg["max_new_buys_per_run"])
     context = market["context"]
 
+    warned = store.load_warned_tickers()  # 토스 경고 종목 매수 veto
     strong = [s for s in signals if engine.is_buy(s.kind) and s.score >= cfg["min_buy_score"]
-              and s.ticker not in held and not s.event_risk]
+              and s.ticker not in held and not s.event_risk and s.ticker not in warned]
     pool = sorted(strong, key=lambda s: s.score, reverse=True)[:max(slots * 3, 6)]
     pool_by = {s.ticker: s for s in pool}
     picks = advisor.select_buys(
