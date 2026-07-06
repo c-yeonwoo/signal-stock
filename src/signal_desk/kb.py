@@ -452,7 +452,7 @@ def _fanding_ticker_index() -> list[tuple[str, str, str]]:
 _FANDING_NOISE = ("공지", "결제", "카드 등록", "회원권", "만화책", "질문 수집", "당첨", "이벤트 안내", "안내")
 
 
-def collect_fanding(limit: int = 40, force: bool = False) -> dict:
+def collect_fanding(limit: int = 20, force: bool = False) -> dict:
     """fanding.kr 미주은 최신 포스트를 훑어 KB로 적재.
     - 종목 특정 글 → 종목 KB(전문가 인사이트, 검증기 게이트).
     - 종목 불특정이라도 시황·거시·시장흐름 해설 → 거시 KB(_MARKET, 시장흐름 트래킹·봇 자문용).
