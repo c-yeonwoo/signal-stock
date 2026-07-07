@@ -114,10 +114,28 @@ def _card_svg(name: str, ticker: str, kind: str, score: float, reasons: list[str
 </svg>'''
 
 
-def generate(limit: int = 5, dry_run: bool = False, skip_recent_hours: int = 20) -> dict:
-    """상위 매수 시그널로 숏폼 초안 생성 → 검수 큐 적재(draft). 최근 생성 종목은 중복 제외."""
-    recent = db.shortform_recent_tickers(skip_recent_hours * 3600) if not dry_run else set()
-    picks = [s for s in _pick_signals(max(limit * 3, 6)) if s.ticker not in recent][:limit]
+def candidates(limit: int = 20) -> list[dict]:
+    """숏폼 후보 — 매수 시그널을 점수순으로(근거·섹터 포함) 보여준다. 생성은 안 함(선택 전 단계).
+    최근 생성된 종목은 recent=True로 표시(중복 방지 참고)."""
+    recent = db.shortform_recent_tickers(20 * 3600)
+    out = []
+    for s in _pick_signals(limit):
+        out.append({"ticker": s.ticker, "name": s.name, "kind": s.kind, "score": round(s.score, 2),
+                    "reasons": _reason_clean(s.reasons, 3), "sector": sectors.sector_of(s.ticker),
+                    "recent": s.ticker in recent})
+    return out
+
+
+def generate(tickers: list[str] | None = None, limit: int = 5, dry_run: bool = False,
+             skip_recent_hours: int = 20) -> dict:
+    """숏폼 초안 생성 → 검수 큐 적재(draft). tickers 지정 시 그 종목만(선택 생성, 시그널 순 유지),
+    없으면 상위 매수 시그널 top N(자동, 최근 생성 중복 제외)."""
+    if tickers:
+        want = set(tickers)
+        picks = [s for s in _pick_signals(60) if s.ticker in want]  # 선택분만(순서=시그널 순)
+    else:
+        recent = db.shortform_recent_tickers(skip_recent_hours * 3600) if not dry_run else set()
+        picks = [s for s in _pick_signals(max(limit * 3, 6)) if s.ticker not in recent][:limit]
     if not picks:
         return {"ok": False, "reason": "조건에 맞는 매수 시그널이 없거나 시세 데이터가 없습니다.",
                 "created": [], "count": 0}
