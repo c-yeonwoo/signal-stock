@@ -37,6 +37,59 @@ def _get(url: str) -> bytes | None:
         return None
 
 
+_cik_map: dict[str, str] | None = None
+
+
+def _ticker_cik_map() -> dict[str, str]:
+    """미국 티커 → CIK(10자리) 맵(SEC 공식). 1회 로드 후 캐시. 실패 시 빈 dict."""
+    global _cik_map
+    if _cik_map is not None:
+        return _cik_map
+    _cik_map = {}
+    raw = _get("https://www.sec.gov/files/company_tickers.json")
+    if raw:
+        try:
+            for row in json.loads(raw).values():
+                _cik_map[str(row["ticker"]).upper()] = f"{int(row['cik_str']):010d}"
+        except Exception as e:
+            log.warning("EDGAR ticker→CIK 맵 파싱 실패: %s", type(e).__name__)
+    return _cik_map
+
+
+def _latest_annual_usd(facts: dict, keys: list[str]) -> float | None:
+    """us-gaap 컨셉(keys 우선순위) 중 최신 '연간(FY, 10-K/20-F)' USD 값. 없으면 None."""
+    usgaap = (facts.get("facts") or {}).get("us-gaap") or {}
+    for k in keys:
+        units = ((usgaap.get(k) or {}).get("units") or {}).get("USD") or []
+        annuals = [u for u in units if u.get("fp") == "FY" and u.get("form") in ("10-K", "20-F")] or units
+        if annuals:
+            best = max(annuals, key=lambda u: (u.get("fy") or 0, u.get("end") or ""))
+            if best.get("val") is not None:
+                return float(best["val"])
+    return None
+
+
+def fundamentals(ticker: str) -> dict | None:
+    """티커의 최신 연간 순이익·자기자본(EDGAR XBRL companyfacts, DART의 미국판). 없으면 None.
+    PER=시총/순이익, PBR=시총/자기자본 계산에 쓴다(시총은 별도로 발행주식수×현재가)."""
+    cik = _ticker_cik_map().get(ticker.upper())
+    if not cik:
+        return None
+    raw = _get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json")
+    if not raw:
+        return None
+    try:
+        facts = json.loads(raw)
+    except Exception:
+        return None
+    ni = _latest_annual_usd(facts, ["NetIncomeLoss", "ProfitLoss"])
+    eq = _latest_annual_usd(facts, ["StockholdersEquity",
+                                    "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"])
+    if ni is None and eq is None:
+        return None
+    return {"net_income": ni, "equity": eq}
+
+
 def _latest_13f(cik: str) -> tuple[str, str] | None:
     """CIK의 최신 13F-HR 공시 (accession, 보고분기말일) 반환. 없으면 None."""
     raw = _get(f"https://data.sec.gov/submissions/CIK{int(cik):010d}.json")

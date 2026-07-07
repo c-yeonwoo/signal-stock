@@ -360,8 +360,33 @@ def load_warned_tickers() -> set[str]:
     return set(json.loads(WARNINGS_FILE.read_text(encoding="utf-8")).keys())
 
 
+def fetch_us_fundamentals_edgar(tickers: list[str], max_calls: int = 40) -> int:
+    """EDGAR XBRL companyfacts로 US 순이익·자기자본을 백필 → us_fundamentals 병합(PER/PBR 계산용).
+    이미 net_income/equity 있는 종목은 스킵해 점진 백필. 한 번에 최대 max_calls 종목만(스로틀). 시도 수 반환."""
+    from signal_desk.ingest import edgar
+    cache = load_us_fundamentals()
+    done = 0
+    for t in tickers:
+        if done >= max_calls:
+            break
+        cur = cache.get(t) or {}
+        if cur.get("net_income") is not None or cur.get("equity") is not None:
+            continue  # 이미 채워짐
+        f = edgar.fundamentals(t)
+        done += 1  # 호출 시도 카운트(스로틀)
+        if not f:
+            continue
+        cache.setdefault(t, {"shares": None, "per": None, "sector": None})
+        cache[t]["net_income"] = f.get("net_income")
+        cache[t]["equity"] = f.get("equity")
+    if done:
+        _write_json(US_FUNDAMENTALS_FILE, cache)
+    return done
+
+
 def us_marketcaps(prices: dict[str, list[float]] | None = None) -> dict[str, dict]:
-    """US 종목별 시총·PER — 시총은 발행주식수 × 최신 종가로 매일 무료 재계산(캐시된 주식수 사용)."""
+    """US 종목별 시총·PER·PBR — 시총은 발행주식수×최신종가로 매일 재계산. PER/PBR은 EDGAR 순이익·
+    자기자본이 있으면 시총으로 계산(없으면 AV의 per 폴백)."""
     fund = load_us_fundamentals()
     if not fund:
         return {}
@@ -369,8 +394,11 @@ def us_marketcaps(prices: dict[str, list[float]] | None = None) -> dict[str, dic
     out = {}
     for t, f in fund.items():
         shares, closes = f.get("shares"), prices.get(t)
-        mktcap = shares * closes[-1] if shares and closes else None
-        out[t] = {"mktcap": round(mktcap) if mktcap else None, "per": f.get("per")}
+        mktcap = round(shares * closes[-1]) if shares and closes else None
+        ni, eq = f.get("net_income"), f.get("equity")
+        per = round(mktcap / ni, 2) if (mktcap and ni and ni > 0) else f.get("per")
+        pbr = round(mktcap / eq, 2) if (mktcap and eq and eq > 0) else None
+        out[t] = {"mktcap": mktcap, "per": per, "pbr": pbr}
     return out
 
 
