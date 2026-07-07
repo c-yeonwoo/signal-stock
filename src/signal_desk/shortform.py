@@ -13,9 +13,9 @@ from __future__ import annotations
 import logging
 import uuid
 
-from signal_desk import db, kb, llm, store
+from signal_desk import db, kb, llm, signalcfg, store
 from signal_desk.reference import sectors
-from signal_desk.signals import engine
+from signal_desk.signals import engine, macro, regime
 
 log = logging.getLogger("signal_desk.shortform")
 
@@ -48,7 +48,12 @@ def _pick_signals(limit: int) -> list:
     prices = store.load_price_series()
     if not universe or not prices:
         return []
-    sigs = engine.evaluate(universe, prices, store.load_fundamentals(), sentiment=kb.sentiment_map())
+    # 시그널 탭(_signals)과 동일 계산 — 관리자 튜닝 + 국면 적응형 매수기준(effective_config).
+    # 이걸 빼면 기본 config로 계산돼 후보가 탭과 어긋난다.
+    reg = regime.classify(prices)
+    mread = macro.read(store.load_macro(), extra=store.load_macro_kr())
+    cfg, _ = signalcfg.effective_config(reg, mread)
+    sigs = engine.evaluate(universe, prices, store.load_fundamentals(), config=cfg, sentiment=kb.sentiment_map())
     warned = store.load_warned_tickers()
     elig = [s for s in sigs if engine.is_buy(s.kind) and not s.event_risk and s.ticker not in warned]
     return sorted(elig, key=lambda s: s.score, reverse=True)[:limit]
