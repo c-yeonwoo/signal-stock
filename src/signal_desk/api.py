@@ -64,10 +64,12 @@ def _daily_kb_collect():
     if got:
         _signals.cache_clear()
         _macro.cache_clear()
-    try:  # US 발행주식수·PER 소량 백필(하루 25콜 한도 → 20개씩, S&P500 전량은 여러 날 걸쳐 채움)
+    try:  # US 재무 백필 — EDGAR(순이익·자기자본, 무료·무제한) 위주 + AV(섹터 등) 소량. 여러 날 걸쳐 전량 채움
         us = [u["ticker"] for u in store.load_us_universe()]
         if us:
-            store.fetch_us_fundamentals(us, max_calls=20)
+            store.fetch_us_fundamentals_edgar(us, max_calls=60)  # EDGAR companyfacts → PER/PBR
+            store.fetch_us_fundamentals(us, max_calls=20)        # AV → shares/sector 보조
+            _us_signals.cache_clear()
     except Exception as e:
         log.warning("US 재무 백필 실패: %s", type(e).__name__)
     db.kv_set("kb_collect_date", _kst_today())
@@ -487,8 +489,8 @@ def _us_signal_items() -> list[dict]:
         d["vol_avg"] = q.get("vol_avg")               # 거래량순 정렬 반영
         mc = mcaps.get(r.ticker) or {}
         d["mktcap"] = mc.get("mktcap")                # 시총순 정렬(백필된 종목만)
-        d["per"] = mc.get("per")                       # US PER(Alpha Vantage)
-        d["pbr"] = None                                # US PBR은 미수집(자본총계 소스 없음)
+        d["per"] = mc.get("per")                       # US PER(EDGAR 순이익, 없으면 AV)
+        d["pbr"] = mc.get("pbr")                        # US PBR(EDGAR 자기자본)
         d["sector"] = us_ko.sector_ko(sector_of.get(r.ticker))  # 한글 섹터
         d["intro"] = f"{d['sector']} 섹터" if d["sector"] else None  # US는 밸류체인 매핑 없음 → 섹터로 대체
         d["intro_desc"] = None
@@ -1055,12 +1057,14 @@ def valuechain_get():
 
 @lru_cache(maxsize=1)
 def _us_signals():
-    """미국 종목 시그널 — US 유니버스 중 시세 있는 종목만(재무 없음 → 저평가 팩터 자동 제외).
-    KB 감성(미주은 등 전문가 인사이트)은 정성 팩터로 반영. 반환: {ticker: SignalResult}."""
+    """미국 종목 시그널 — US 유니버스 중 시세 있는 종목. EDGAR 재무(PER/PBR)가 있으면 저평가 팩터도
+    반영, 없으면 자동 제외. KB 감성(미주은 등)은 정성 팩터. 반환: {ticker: SignalResult}."""
     prices = store.load_us_price_series()
     if not prices:
         return {}
-    return {s.ticker: s for s in evaluate(store.load_us_universe(), prices, sentiment=kb.sentiment_map())}
+    fundamentals = {t: mc for t, mc in store.us_marketcaps(prices).items() if mc.get("per") or mc.get("pbr")}
+    return {s.ticker: s for s in evaluate(store.load_us_universe(), prices,
+                                          fundamentals=fundamentals, sentiment=kb.sentiment_map())}
 
 
 @app.get("/api/gurus")
