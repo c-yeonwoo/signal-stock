@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import urllib.error
 import urllib.request
 
@@ -19,6 +20,8 @@ from signal_desk import config
 log = logging.getLogger("signal_desk.ingest.outstanding")
 
 _GQL = "https://wp.outstanding.kr/api/next/index.php"
+_RETRIES = 3          # 일시적 5xx 재시도 횟수(ALB 뒤 일부 인스턴스가 간헐 500)
+_RETRY_WAIT = 1.5     # 재시도 간격(초)
 _UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 "
        "(KHTML, like Gecko) Mobile/15E148 outsapp/ios/20240413")
 _TIMEOUT = 20
@@ -42,17 +45,28 @@ def _post(query: str, variables: dict) -> dict | None:
     if cookie:
         headers["cookie"] = cookie
     body = json.dumps({"query": query, "variables": variables}).encode("utf-8")
-    req = urllib.request.Request(_GQL, data=body, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-            out = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        # 2026-07 outstanding.kr이 WordPress→Next.js로 개편되며 이 WP GraphQL 엔드포인트(index.php)가
-        # 폐기됨(모든 요청 500). 새 기고 API는 미확인 → graceful 스킵(전체 수집은 계속 진행).
-        log.warning("outstanding 수집 불가 — 사이트 개편으로 기존 API 폐기(HTTP %s, 재연동 필요)", e.code)
-        return None
-    except Exception as e:
-        log.warning("outstanding 요청 실패: %s", type(e).__name__)
+    out = None
+    for attempt in range(_RETRIES):
+        req = urllib.request.Request(_GQL, data=body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+                out = json.loads(resp.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as e:
+            # ALB 뒤 일부 인스턴스가 간헐 5xx → 재시도. 4xx(클라이언트 오류)는 재시도 무의미.
+            if 500 <= e.code < 600 and attempt < _RETRIES - 1:
+                log.info("outstanding %s — 재시도 %d/%d", e.code, attempt + 1, _RETRIES - 1)
+                time.sleep(_RETRY_WAIT)
+                continue
+            log.warning("outstanding 요청 실패(HTTP %s) — 이번 수집은 스킵(다음 주기 재시도)", e.code)
+            return None
+        except Exception as e:
+            if attempt < _RETRIES - 1:
+                time.sleep(_RETRY_WAIT)
+                continue
+            log.warning("outstanding 요청 실패: %s — 이번 수집은 스킵", type(e).__name__)
+            return None
+    if not out:
         return None
     if out.get("errors"):
         log.warning("outstanding GraphQL 오류: %s", str(out["errors"])[:200])
