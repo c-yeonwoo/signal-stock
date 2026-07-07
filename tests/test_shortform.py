@@ -60,5 +60,24 @@ def test_review_lifecycle(tmp_path, monkeypatch):
 def test_skips_recent_duplicates(tmp_path, monkeypatch):
     _setup(monkeypatch, tmp_path, [_sig("005930", "삼성전자", "BUY", 1.8)])
     assert shortform.generate(limit=1)["count"] == 1
-    # 방금 생성 → 중복 제외로 두 번째는 0
+    # 방금 생성 → 중복 제외로 두 번째는 0 (자동 모드)
     assert shortform.generate(limit=1)["count"] == 0
+
+
+def test_candidates_signal_order(tmp_path, monkeypatch):
+    sigs = [_sig("005930", "삼성전자", "STRONG_BUY", 2.3), _sig("000660", "SK하이닉스", "BUY", 1.6),
+            _sig("035720", "카카오", "HOLD", 0.4)]
+    _setup(monkeypatch, tmp_path, sigs)
+    cs = shortform.candidates()
+    assert [c["ticker"] for c in cs] == ["005930", "000660"]   # 매수만, 점수 순
+    assert cs[0]["reasons"] and "recent" in cs[0]              # 근거·중복표시 포함, 생성은 안 함
+    assert shortform.db.shortform_list() == []
+
+
+def test_generate_selected_only(tmp_path, monkeypatch):
+    sigs = [_sig("005930", "삼성전자", "STRONG_BUY", 2.3), _sig("000660", "SK하이닉스", "BUY", 1.9),
+            _sig("035420", "NAVER", "BUY", 1.5)]
+    _setup(monkeypatch, tmp_path, sigs)
+    out = shortform.generate(tickers=["000660"])              # 선택한 종목만
+    assert out["count"] == 1 and out["created"][0]["ticker"] == "000660"
+    assert {i["ticker"] for i in db.shortform_list()} == {"000660"}

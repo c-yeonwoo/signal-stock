@@ -162,7 +162,7 @@ _ADMIN_PATHS = {
     "/api/refresh", "/api/engine/config", "/api/engine/reset", "/api/backtest/analysis",
     "/api/kb/refresh", "/api/kb/import", "/api/kb/import-file", "/api/kb/documents", "/api/kb/digests",
     "/api/kb/collect-fanding", "/api/kb/collect-outstanding", "/api/kb/collect-youtube",
-    "/api/shortform/generate", "/api/shortform/queue",
+    "/api/shortform/generate", "/api/shortform/queue", "/api/shortform/candidates",
 }
 
 
@@ -847,10 +847,18 @@ def _admin_or_403(request: Request):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
 
 
+@app.get("/api/shortform/candidates")
+def shortform_candidates(limit: int = 20):
+    """숏폼 후보 — 매수 시그널 점수순 + 근거(선택 전 단계, 생성 안 함)."""
+    return {"candidates": shortform.candidates(limit=limit)}
+
+
 @app.post("/api/shortform/generate")
 def shortform_generate(data: dict = Body(default={})):
-    """상위 매수 시그널로 숏폼 초안(스크립트+카드) 생성 → 검수 큐 적재(draft)."""
-    return shortform.generate(limit=int(data.get("limit", 5)),
+    """선택한 종목(tickers)으로 숏폼 초안(스크립트+카드) 생성 → 검수 큐 적재. tickers 없으면 상위 자동."""
+    tickers = data.get("tickers")
+    tickers = [str(t) for t in tickers] if isinstance(tickers, list) else None
+    return shortform.generate(tickers=tickers, limit=int(data.get("limit", 5)),
                               dry_run=bool(data.get("dry_run")))
 
 
