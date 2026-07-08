@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from signal_desk.signals import flow as flow_mod
 from signal_desk.signals import fundamental as fnd
 from signal_desk.signals import indicators as ind
+from signal_desk.signals import momentum as mom
 from signal_desk.signals import quality as fscore
 from signal_desk.signals import narrative as narr
 from signal_desk.signals import qualitative as qual
@@ -37,6 +38,10 @@ class SignalConfig:
     weight_qualitative: float = 0.15  # KB(뉴스·영상) 정성 — 데이터 있을 때만 포함(없으면 재정규화 제외)
     weight_flow: float = 0.20  # 수급(외국인·기관 순매수) — KR만, 데이터 있을 때만 포함
     weight_quality: float = 0.15  # 퀄리티(축약 F-Score) — 재무 건전성·개선. 데이터 있을 때만 포함
+    weight_momentum: float = 0.20  # 중기 모멘텀(12-1개월) — 가격만 필요, 백테스트에도 반영
+    momentum_lookback: int = 252   # 약 12개월(거래일)
+    momentum_skip: int = 21        # 직전 약 1개월 제외(단기 반전 노이즈 제거)
+    momentum_scale: float = 0.5    # 수익률→스코어 스케일(+50%면 +1로 포화)
 
     # 5단계 시그널 임계값(종합점수 범위 ~[-3,3]): 강력매수 ≥ 매수 ≥ (관망) ≥ 매도 ≥ 강력매도
     strong_buy_threshold: float = 2.0
@@ -88,6 +93,8 @@ class SignalResult:
     has_flow: bool = False
     quality_points: int | None = None  # 축약 F-Score(0~5, 재무 건전성·개선)
     has_quality: bool = False
+    momentum_ret: float | None = None  # 12-1개월 수익률(중기 모멘텀)
+    has_momentum: bool = False
     event_risk: bool = False  # KB에서 최근 악재 이벤트 감지 — 매수 후보에서 제외(veto)
     event_note: str = ""
     event_severity: str = ""  # 악재 강도: critical(전량 청산)|serious(부분 청산)|''
@@ -308,6 +315,9 @@ def evaluate(
         ql_norm, ql_weight, ql_reasons, ql_points, has_quality = fscore.component(
             fundamentals.get(ticker), config.weight_quality
         )
+        mom_norm, mom_weight, mom_reasons, mom_ret, has_momentum = mom.score_at(
+            closes, len(closes) - 1, config
+        )
 
         # 확인된 하락추세(떨어지는 칼)에서는 낙폭과대·저평가 매수기여를 무효화한다 — 싸고
         # 과매도여도 구조적 하락이면 계속 싸지고 떨어지는 가치함정. 종합 BUY도 아래서 관망 강등.
@@ -329,6 +339,7 @@ def evaluate(
             (rev_norm, rev_weight, rev_reasons),
             (flow_norm, flow_weight, flow_reasons),  # 수급(외국인·기관) — 하락추세에도 유효(스마트머니 실매수 확인)
             (ql_norm, ql_weight, ql_reasons),        # 퀄리티(축약 F-Score) — 재무 건전성·개선
+            (mom_norm, mom_weight, mom_reasons),     # 중기 모멘텀(12-1개월)
         ]
         combined = combine(components, config)
         _apply_trend_gate(combined, closes, series, i_last, config)
@@ -343,6 +354,7 @@ def evaluate(
             qualitative_score=qual_score, has_qualitative=has_qualitative,
             flow_intensity=round(flow_intensity, 3) if has_flow else None, has_flow=has_flow,
             quality_points=ql_points, has_quality=has_quality,
+            momentum_ret=mom_ret, has_momentum=has_momentum,
             event_risk=bool(entry.get("event_risk")), event_note=str(entry.get("event_note") or ""),
             event_severity=str(entry.get("event_severity") or ""),
             reasons=combined["reasons"],
@@ -366,9 +378,11 @@ def _price_only_components(
     if rev_weight and rev_norm > 0 and _downtrend_confirmed(closes, series, i, config):
         rev_norm, rev_weight = 0.0, 0.0  # 하락추세 확인 시 낙폭과대 매수기여 무효화(떨어지는 칼)
         rev_reasons = [*rev_reasons, "[추세] 하락추세 — 낙폭과대 매수신호 무효화"]
+    mom_norm, mom_weight, mom_reasons, _, _ = mom.score_at(closes[: i + 1], i, config)  # 모멘텀도 가격기반 → 백테스트 반영
     return [
         (tech_score / 3.0, config.weight_technical, tech_reasons),
         (rev_norm, rev_weight, rev_reasons),
+        (mom_norm, mom_weight, mom_reasons),
     ]
 
 
