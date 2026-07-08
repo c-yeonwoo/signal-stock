@@ -30,6 +30,7 @@ US_EXCHANGES_FILE = CACHE_DIR / "us_exchanges.json"  # ticker→KIS 거래소코
 WARNINGS_FILE = CACHE_DIR / "warnings.json"  # 토스 투자경고·거래정지·과열·VI(매수 veto용)
 US_FUNDAMENTALS_FILE = CACHE_DIR / "us_fundamentals.json"  # 미국 발행주식수·PER(Alpha Vantage, 소량 백필)
 FLOWS_FILE = CACHE_DIR / "flows.json"  # 투자자별 수급(외국인·기관 순매수, KR) — 시그널 수급 팩터
+MARKET_FLOW_FILE = CACHE_DIR / "market_flow.json"  # 시장 전체(KOSPI) 외국인·기관 순매수 누적(토스) — 국면 신호
 
 PRICE_HISTORY_DAYS = 400  # MA120 워밍업 + 백테스트 여유분
 
@@ -103,6 +104,45 @@ def load_flows() -> dict[str, dict]:
     if not FLOWS_FILE.exists():
         return {}
     return json.loads(FLOWS_FILE.read_text(encoding="utf-8"))
+
+
+def _market_flow_summary(records: list[dict]) -> dict:
+    """토스 시장전체 투자자 거래 레코드(최신→과거) → 외국인·기관 순매수 5/20일 누적(원, 조원 환산).
+    smart_net = 외국인+기관(스마트머니). 순수함수(테스트 분리)."""
+    def cum(key: str, n: int) -> float:
+        return sum(r.get(key, 0.0) for r in records[:n])
+    fo5, fo20 = cum("foreigner_net", 5), cum("foreigner_net", 20)
+    in5, in20 = cum("institution_net", 5), cum("institution_net", 20)
+    to_jo = lambda v: round(v / 1e12, 3)  # 원 → 조원(표시용)
+    return {
+        "as_of": records[0]["date"] if records else None,
+        "days": len(records),
+        "foreign_net_5d": to_jo(fo5), "foreign_net_20d": to_jo(fo20),
+        "inst_net_5d": to_jo(in5), "inst_net_20d": to_jo(in20),
+        "smart_net_5d": to_jo(fo5 + in5), "smart_net_20d": to_jo(fo20 + in20),
+    }
+
+
+def fetch_market_flow() -> dict:
+    """토스 시장 전체(KOSPI) 외국인·기관 순매수 누적 → market_flow.json. 국면(regime) 신호용.
+    pykrx 종목별 수급이 죽어 그 대체로 '시장 전체'만 받는다(토스엔 종목별 없음). 미인증/실패 시 빈 dict."""
+    from signal_desk.ingest import toss
+    if not toss.available():
+        return {}
+    out: dict[str, dict] = {}
+    for market in ("KOSPI",):
+        recs = toss.market_investor_trading(market, "1d", 20)
+        if recs:
+            out[market] = _market_flow_summary(recs)
+    if out:
+        _write_json(MARKET_FLOW_FILE, out)
+    return out
+
+
+def load_market_flow() -> dict[str, dict]:
+    if not MARKET_FLOW_FILE.exists():
+        return {}
+    return json.loads(MARKET_FLOW_FILE.read_text(encoding="utf-8"))
 
 
 def fetch_fundamentals(universe: list[dict] | None = None, bsns_year: str | None = None) -> dict:

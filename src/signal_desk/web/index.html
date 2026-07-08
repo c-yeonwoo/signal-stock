@@ -1072,8 +1072,15 @@ async function loadRegime(){
     if (!d.ready) { pill.textContent = '데이터 없음'; pill.className = 'sig-pill HOLD'; detail.textContent = ''; return; }
     pill.textContent = d.regime;
     pill.className = 'sig-pill ' + d.regime;
-    detail.textContent =
-      `MA60 상회 ${fmtNum(d.breadth_pct, 1)}% · 평균 20일 모멘텀 ${d.avg_momentum_pct > 0 ? '+' : ''}${fmtNum(d.avg_momentum_pct, 1)}%`;
+    let detailTxt = `MA60 상회 ${fmtNum(d.breadth_pct, 1)}% · 평균 20일 모멘텀 ${d.avg_momentum_pct > 0 ? '+' : ''}${fmtNum(d.avg_momentum_pct, 1)}%`;
+    // 시장 전체(KOSPI) 외국인·기관 순매수 방향(토스) — 종목별 수급이 아니라 시장 스마트머니 흐름
+    const mf = d.market_flow;
+    if (mf && mf.available && mf.smart_net_20d != null) {
+      const net = mf.smart_net_20d, sign = net > 0 ? '+' : '';
+      const icon = mf.bias === '순매수' ? '🟢' : mf.bias === '순매도' ? '🔴' : '⚪';
+      detailTxt += ` · ${icon} 외국인·기관 20일 ${mf.bias} ${sign}${fmtNum(net, 2)}조`;
+    }
+    detail.textContent = detailTxt;
     const adapt = document.getElementById('regime-adaptive');
     if (d.adaptive && d.adaptive.bump > 0) {
       adapt.style.display = '';
