@@ -81,3 +81,24 @@ def buy_threshold_bump(regime_result: dict | None, macro_result: dict | None) ->
         bump += _MACRO_UNFAVORABLE_BUMP
         reasons.append(f"거시 비우호 — 매수 기준 +{_MACRO_UNFAVORABLE_BUMP:.1f}")
     return {"bump": round(bump, 2), "reasons": reasons}
+
+
+# 시장 전체(KOSPI) 외국인+기관 20일 순매수 누적(조원)이 이 값 이하/이상이면 순매도/순매수세로 본다.
+_FLOW_SELL_JO = -2.0
+_FLOW_BUY_JO = 2.0
+
+
+def market_flow_bias(flow_result: dict | None, market: str = "KOSPI") -> dict:
+    """토스 시장전체 수급(외국인·기관 순매수 누적) → 국면 보조 신호. pykrx 종목별 수급이 죽어
+    그 대체로 '시장 전체' 스마트머니 방향만 본다. smart_net_20d(조원) 부호·크기로 라벨링.
+
+    반환: {available, bias('순매수'|'중립'|'순매도'|None), smart_net_20d, foreign/inst_net_20d, as_of}.
+    """
+    mf = (flow_result or {}).get(market) if flow_result else None
+    net = (mf or {}).get("smart_net_20d")
+    if net is None:
+        return {"available": False, "bias": None}
+    bias = "순매도" if net <= _FLOW_SELL_JO else "순매수" if net >= _FLOW_BUY_JO else "중립"
+    return {"available": True, "bias": bias, "smart_net_20d": net,
+            "foreign_net_20d": mf.get("foreign_net_20d"), "inst_net_20d": mf.get("inst_net_20d"),
+            "as_of": mf.get("as_of")}

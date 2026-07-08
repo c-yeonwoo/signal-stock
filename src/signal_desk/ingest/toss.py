@@ -175,3 +175,40 @@ def warnings(symbol: str) -> list[str]:
     """활성 투자경고/거래정지/과열/VI 유형 목록. 없으면 빈 리스트(=정상)."""
     body = _get(f"/api/v1/stocks/{symbol}/warnings")
     return [w for r in _rows(body) if (w := r.get("warningType"))]
+
+
+def _amt(obj: dict | None, key: str) -> float:
+    """{buyAmount,sellAmount} 문자열 금액 → float(원). 파싱 실패 0."""
+    try:
+        return float(str((obj or {}).get(key, "") or 0).replace(",", ""))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def market_investor_trading(market: str = "KOSPI", interval: str = "1d", count: int = 20) -> list[dict]:
+    """시장 전체(KOSPI/KOSDAQ) 투자자별 매수·매도대금 → 순매수(net). pykrx 종목별 수급이 KRX
+    스키마 변경으로 죽어(2026-07) 그 대체로 '시장 국면'용 시장전체 수급만 토스에서 받는다.
+    ⚠️ 종목별(per-ticker)은 토스 Open API에 없음 — 시장 지수(KOSPI/KOSDAQ)만 지원.
+    반환(최신→과거): [{date, foreigner_net, institution_net, individual_net, total_buy}(원, float)]."""
+    body = _get(f"/api/v1/market-indicators/{market}/investor-trading",
+                {"interval": interval, "count": max(1, min(100, count))})
+    # 응답: {"result": {"records": [{date, foreigner:{buyAmount,sellAmount}, institution:{...}, ...}]}}
+    result = body.get("result") if isinstance(body, dict) else None
+    records = (result or {}).get("records") if isinstance(result, dict) else None
+    if not isinstance(records, list):
+        records = _rows(body)  # 방어적 폴백(래핑 형태가 다를 때)
+    out: list[dict] = []
+    for r in records:
+        if not isinstance(r, dict) or not r.get("date"):
+            continue
+        fo, ins, ind = r.get("foreigner"), r.get("institution"), r.get("individual")
+        total_buy = sum(_amt(g, "buyAmount") for g in (fo, ins, ind, r.get("otherCorporation")))
+        out.append({
+            "date": r["date"],
+            "foreigner_net": _amt(fo, "buyAmount") - _amt(fo, "sellAmount"),
+            "institution_net": _amt(ins, "buyAmount") - _amt(ins, "sellAmount"),
+            "individual_net": _amt(ind, "buyAmount") - _amt(ind, "sellAmount"),
+            "total_buy": total_buy,
+        })
+    out.sort(key=lambda x: x["date"], reverse=True)  # 최신 우선(응답 정렬 무관하게 보장)
+    return out

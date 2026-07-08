@@ -711,7 +711,12 @@ def _refresh_macro(data: dict) -> dict:
         store.fetch_warnings([u["ticker"] for u in store.load_universe()])  # 투자경고/거래정지/VI → 매수 veto
     except Exception as e:
         log.warning("토스 경고 수집 실패(무시): %s", type(e).__name__)
-    return {"macro_size": len(macro_items)}
+    try:
+        mf = store.fetch_market_flow()  # 토스 시장전체(KOSPI) 외국인·기관 순매수 → 국면 신호(종목별 pykrx 대체)
+    except Exception as e:
+        log.warning("시장 수급 수집 실패(무시): %s", type(e).__name__)
+        mf = {}
+    return {"macro_size": len(macro_items), "market_flow": bool(mf)}
 
 
 def _refresh_flows(data: dict) -> dict:
@@ -794,7 +799,8 @@ def regime_get():
     if not store.is_ready():
         return {"ready": False, "regime": None}
     _, adapt = signalcfg.effective_config(_regime(), _macro())  # 국면 적응으로 상향된 매수 기준
-    return {**_regime(), "adaptive": adapt}
+    flow = regime.market_flow_bias(store.load_market_flow())  # 토스 시장전체 외국인·기관 순매수 방향
+    return {**_regime(), "adaptive": adapt, "market_flow": flow}
 
 
 @app.get("/api/egress-ip")
