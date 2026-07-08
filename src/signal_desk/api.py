@@ -680,6 +680,10 @@ def refresh(data: dict = Body(default={})):
         fundamentals = store.fetch_fundamentals(universe)      # DART 재무 + PER/PBR (분기 1회)
         store.fetch_fundamentals_history(universe)             # point-in-time 백테스트용 연도별 재무
         store.compute_quality()                                # 당해+전년 → 축약 F-Score(퀄리티 팩터)
+        try:
+            store.fetch_kr_dividends(universe)                 # KR 주당배당(DART) → 배당 플래너
+        except Exception as e:
+            log.warning("KR 배당 수집 실패(무시): %s", type(e).__name__)
         db.kv_set("dart_fetch_date", _kst_today())
     else:
         store.update_valuation()                               # 캐시 재무 + 오늘 시총 → PER/PBR·시총만 갱신(KRX 1콜)
@@ -767,26 +771,35 @@ def egress_ip_get():
 
 
 @app.get("/api/dividends")
-def dividends_get():
-    """US 배당주 리스트(배당 플래너용) — 배당수익률·주당배당·현재가 + 시그널·시총·섹터. 수익률 내림차순.
-    봇과 분리된 '월 현금흐름' 도구. EDGAR TTM 주당배당 기반(월배당은 연÷12로 환산)."""
-    divs = store.us_dividends()
+def dividends_get(market: str = "us"):
+    """배당주 리스트(배당 플래너) — 배당수익률·주당배당·현재가 + 시그널·시총·섹터. 수익률 내림차순.
+    market=us(EDGAR TTM, 월배당 가능) | kr(DART 결산배당, 연1회≈4월). 봇과 분리된 '현금흐름' 도구."""
+    if _mkt(market) == "us":
+        divs, currency = store.us_dividends(), "USD"
+        sig = _us_signals()
+        mcaps = store.us_marketcaps()
+        names = {u["ticker"]: us_ko.name_ko(u["ticker"], u["name"]) for u in store.load_us_universe()}
+        sec_of = lambda t: us_ko.sector_ko({u["ticker"]: u.get("sector") for u in store.load_us_universe()}.get(t))
+    else:
+        divs, currency = store.kr_dividends(), "KRW"
+        sig = {s.ticker: s for s in _signals()} if store.is_ready() else {}
+        quotes = _quotes()
+        mcaps = {t: {"mktcap": (q or {}).get("mktcap")} for t, q in quotes.items()}
+        names = {u["ticker"]: u["name"] for u in store.load_universe()}
+        sec_of = lambda t: sectors.sector_of(t)
     if not divs:
-        return {"ready": False, "items": [], "message": "배당 데이터 없음 — 관리자 데이터 갱신(EDGAR 배당 백필) 필요"}
-    sig = _us_signals()
-    mcaps = store.us_marketcaps()
-    names = {u["ticker"]: us_ko.name_ko(u["ticker"], u["name"]) for u in store.load_us_universe()}
-    sec = {u["ticker"]: u.get("sector") for u in store.load_us_universe()}
+        msg = ("배당 데이터 없음 — 관리자 데이터 갱신 필요"
+               + (" (EDGAR 배당 백필)" if _mkt(market) == "us" else " (DART 배당)"))
+        return {"ready": False, "items": [], "currency": currency, "message": msg}
     items = []
     for t, d in divs.items():
         s = sig.get(t)
         items.append({"ticker": t, "name": names.get(t, t), "price": d["price"],
                       "dps": d["dps"], "div_yield": d["div_yield"], "div_months": d.get("div_months") or [],
                       "kind": s.kind if s else None, "score": round(s.score, 2) if s else None,
-                      "mktcap": (mcaps.get(t) or {}).get("mktcap"),
-                      "sector": us_ko.sector_ko(sec.get(t))})
+                      "mktcap": (mcaps.get(t) or {}).get("mktcap"), "sector": sec_of(t)})
     items.sort(key=lambda x: (x["div_yield"] or 0, x["mktcap"] or 0), reverse=True)
-    return {"ready": True, "items": items}
+    return {"ready": True, "currency": currency, "market": _mkt(market), "items": items}
 
 
 @app.get("/api/data-health")

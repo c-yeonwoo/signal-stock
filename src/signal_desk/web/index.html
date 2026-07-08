@@ -558,9 +558,14 @@
 
     <div id="trading-dividend" style="display:none">
       <div class="card" style="margin-bottom:16px">
-        <b style="font-size:15px">💵 배당 플래너 <span style="color:var(--dim);font-weight:600;font-size:12px">· 미국 배당주 월 현금흐름 시뮬레이션</span></b>
-        <p class="page-desc" style="margin:6px 0 12px">미국 배당주를 <b>배당수익률·시그널·시총 순</b>으로 보고, 담을 종목과 주수를 정하면 <b>예상 연/월 배당</b>을 계산해 보여줍니다.
-          연배당(TTM) 기준 <b>월평균(연÷12)</b>으로 환산합니다. <span style="color:var(--dim-2)">배당·주가는 참고용, 미래 배당을 보장하지 않음 · 봇 트레이딩과 별개.</span></p>
+        <b style="font-size:15px">💵 배당 플래너 <span style="color:var(--dim);font-weight:600;font-size:12px">· 배당 현금흐름 시뮬레이션</span></b>
+        <p class="page-desc" style="margin:6px 0 10px">배당주를 <b>배당수익률·시그널·시총 순</b>으로 보고, 담을 종목과 주수를 정하면 <b>예상 연/월 배당</b>을 계산해 보여줍니다.
+          연배당 기준 <b>월평균(연÷12)</b> 환산. <span style="color:var(--dim-2)">배당·주가 참고용, 미래 배당 보장 안 함 · 봇과 별개.</span></p>
+        <div class="seg-toggle" id="div-market-seg" style="margin-bottom:6px">
+          <button class="on" data-dmkt="us" onclick="switchDivMarket('us')">미국(월/분기)</button>
+          <button data-dmkt="kr" onclick="switchDivMarket('kr')">국내(연 결산)</button>
+        </div>
+        <div id="div-kr-note" style="display:none;font-size:11px;color:var(--sell);margin-bottom:6px">⚠️ 국내는 대부분 연 1회 결산배당(익년 ~4월 지급 근사) · 배당금액은 정확하나 <b>수익률·투자금은 시세 정합 후 정확</b>.</div>
         <div class="card-row" style="margin-bottom:6px">
           <div class="card"><div class="stat-label">예상 연 배당</div><div class="stat-value" id="div-annual">$0</div></div>
           <div class="card"><div class="stat-label">예상 월 배당(평균)</div><div class="stat-value" id="div-monthly">$0</div></div>
@@ -1838,11 +1843,20 @@ function switchTradingSeg(seg){
 }
 
 // ===== 배당 플래너(US) — 배당주 리스트 + 담은 주수로 예상 연/월 배당 =====
-let _divItems = [], _divPlan = {}, _divChart = null, _divCalChart = null;
+let _divItems = [], _divPlan = {}, _divChart = null, _divCalChart = null, _divMarket = 'us', _divCur = 'USD';
+const _divMoney = (v, dp) => _divCur === 'USD' ? '$' + fmtNum(v, dp) : fmtKRW(v);
+function switchDivMarket(m){
+  _divMarket = (m === 'kr') ? 'kr' : 'us';
+  _divPlan = {};  // 시장 바꾸면 담은 것 초기화
+  document.querySelectorAll('#div-market-seg button').forEach(b => b.classList.toggle('on', b.dataset.dmkt === _divMarket));
+  document.getElementById('div-kr-note').style.display = _divMarket === 'kr' ? '' : 'none';
+  loadDividends();
+}
 async function loadDividends(){
   const el = document.getElementById('div-list');
   try {
-    const d = await (await fetch('/api/dividends')).json();
+    const d = await (await fetch('/api/dividends?market=' + _divMarket)).json();
+    _divCur = d.currency || 'USD';
     if (!d.ready || !(d.items || []).length) {
       el.className = 'placeholder';
       el.textContent = d.message || '배당 데이터가 아직 없습니다 — 관리자 데이터 갱신(EDGAR 배당 백필) 후 표시됩니다.';
@@ -1856,8 +1870,8 @@ async function loadDividends(){
       return `<tr>
         <td>${esc(it.name)}<div style="color:var(--dim);font-size:11px">${esc(it.ticker)}${it.sector ? ' · ' + esc(it.sector) : ''}</div></td>
         <td class="num" style="color:var(--sig-buy);font-weight:700">${it.div_yield != null ? it.div_yield + '%' : '–'}</td>
-        <td class="num">$${fmtNum(it.dps, 2)}</td>
-        <td class="num">${it.price != null ? '$' + fmtNum(it.price, 2) : '–'}${kindTag}</td>
+        <td class="num">${_divMoney(it.dps, _divCur === 'USD' ? 2 : 0)}</td>
+        <td class="num">${it.price != null ? _divMoney(it.price, _divCur === 'USD' ? 2 : 0) : '–'}${kindTag}</td>
         <td class="num"><input type="number" min="0" class="ctrl" style="width:74px" data-divt="${esc(it.ticker)}"
              value="${_divPlan[it.ticker] || ''}" placeholder="0" oninput="onDivQty(this)"></td></tr>`;
     }).join('');
@@ -1885,18 +1899,19 @@ function recalcDividends(){
     const per = a / ms.length;
     ms.forEach(m => { if (m >= 1 && m <= 12) months[m - 1] += per; });
   }
-  document.getElementById('div-annual').textContent = '$' + fmtNum(annual, 0);
-  document.getElementById('div-monthly').textContent = '$' + fmtNum(annual / 12, 0);
+  const dp = _divCur === 'USD' ? 0 : 0;
+  document.getElementById('div-annual').textContent = _divMoney(annual, dp);
+  document.getElementById('div-monthly').textContent = _divMoney(annual / 12, dp);
   document.getElementById('div-count').textContent = contrib.length;
-  document.getElementById('div-cost').textContent = '$' + fmtNum(cost, 0);
+  document.getElementById('div-cost').textContent = _divMoney(cost, dp);
   const holder = document.getElementById('div-chart');
   if (!contrib.length) { if (_divChart) _divChart.clear(); if (_divCalChart) _divCalChart.clear(); return; }
   if (!_divChart) _divChart = echarts.init(holder);
   contrib.sort((a, b) => b.value - a.value);
   _divChart.setOption({
-    tooltip: { trigger: 'axis', formatter: p => `${esc(p[0].name)}: $${p[0].value}/년` },
+    tooltip: { trigger: 'axis', formatter: p => `${esc(p[0].name)}: ${_divMoney(p[0].value, 2)}/년` },
     grid: { left: 90, right: 20, top: 10, bottom: 20 },
-    xAxis: { type: 'value', name: '연 배당($)' },
+    xAxis: { type: 'value', name: '연 배당' },
     yAxis: { type: 'category', data: contrib.map(c => c.name), inverse: true },
     series: [{ type: 'bar', data: contrib.map(c => c.value), itemStyle: { color: '#22c55e' } }],
   }, true);
@@ -1906,12 +1921,12 @@ function recalcDividends(){
   if (!_divCalChart) _divCalChart = echarts.init(cal);
   const gap = months.filter(v => v < 0.005).length;  // 배당 없는 달
   _divCalChart.setOption({
-    tooltip: { trigger: 'axis', formatter: p => `${p[0].axisValue}: $${fmtNum(p[0].value, 1)}` },
-    grid: { left: 50, right: 20, top: 24, bottom: 24 },
+    tooltip: { trigger: 'axis', formatter: p => `${p[0].axisValue}: ${_divMoney(p[0].value, 1)}` },
+    grid: { left: 60, right: 20, top: 24, bottom: 24 },
     title: { text: gap ? `배당 없는 달 ${gap}개 — 종목 추가로 채워보세요` : '12개월 모두 배당 유입 ✓',
              textStyle: { fontSize: 11, color: gap ? '#b45309' : '#22c55e', fontWeight: 600 }, left: 'center', top: 0 },
     xAxis: { type: 'category', data: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'] },
-    yAxis: { type: 'value', name: '$' },
+    yAxis: { type: 'value' },
     series: [{ type: 'bar', data: months.map(v => Math.round(v * 100) / 100),
                itemStyle: { color: '#4f46e5' } }],
   }, true);

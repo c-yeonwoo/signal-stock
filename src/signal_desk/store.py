@@ -201,6 +201,47 @@ def fetch_fundamentals_history(universe: list[dict] | None = None,
     return out
 
 
+def fetch_kr_dividends(universe: list[dict] | None = None, bsns_year: str | None = None) -> int:
+    """KR 주당 현금배당금(DART alotMatter) → fundamentals.json에 dps 병합. 무배당은 dps=None.
+    연 결산배당이라 분기 1회 갱신(DART 재수집 시)이면 충분. 시도 종목 수 반환."""
+    universe = universe if universe is not None else load_universe()
+    bsns_year = bsns_year or str(datetime.date.today().year - 1)
+    codes = dart.corp_codes()
+    if not codes:
+        return 0
+    fund = load_fundamentals()
+    n = 0
+    for item in universe:
+        t = item["ticker"]
+        cc = codes.get(t)
+        if not cc:
+            continue
+        fund.setdefault(t, {})["dps"] = dart.dividend(cc, bsns_year)  # None=무배당
+        n += 1
+    _write_json(FUNDAMENTALS_FILE, fund)
+    return n
+
+
+def kr_dividends(prices: dict[str, list[float]] | None = None) -> dict[str, dict]:
+    """KR 배당주 — {ticker: {dps(주당 연배당,원), div_yield(%), price, div_months}}. 배당 있는 종목만.
+    ⚠️ 시세가 스케일 상태면 div_yield·price는 왜곡(연배당 income=dps×주수는 DART라 정확). 지급월은 결산배당
+    익년 4월 근사([4])."""
+    fund = load_fundamentals()
+    if not fund:
+        return {}
+    prices = prices if prices is not None else load_price_series()
+    out = {}
+    for t, f in fund.items():
+        dps = f.get("dps")
+        if not dps or dps <= 0:
+            continue
+        closes = prices.get(t)
+        price = float(closes[-1]) if closes else None
+        out[t] = {"dps": round(float(dps), 2), "price": round(price) if price else None,
+                  "div_yield": round(dps / price * 100, 2) if price else None, "div_months": [4]}
+    return out
+
+
 def load_fundamentals_history() -> dict[str, dict]:
     if not FUNDAMENTALS_HISTORY_FILE.exists():
         return {}
