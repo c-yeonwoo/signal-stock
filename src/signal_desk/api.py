@@ -140,6 +140,10 @@ async def _bot_loop():
                     _signals.cache_clear()
                 except Exception as e:
                     log.warning("마감후 KB 갱신 실패: %s", e)
+                try:
+                    store.snapshot_signals(_signals())  # 팩터 PIT 스냅샷 누적(향후 팩터 백테스트용)
+                except Exception as e:
+                    log.warning("시그널 스냅샷 실패: %s", type(e).__name__)
                 for uid in enabled:
                     bot.snapshot_positions(uid, "kr")
                     bot.snapshot_positions(uid, "us")

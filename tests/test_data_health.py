@@ -59,3 +59,25 @@ def test_data_health_includes_freshness(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB", tmp_path / "app.db")
     out = api.data_health_get()
     assert isinstance(out.get("freshness"), list) and out["freshness"]
+
+
+def test_snapshot_signals_accumulates_pit(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data/cache").mkdir(parents=True)
+    from signal_desk.signals.engine import SignalResult
+
+    def _sig(t, score, kind, flow=None, q=None):
+        return SignalResult(ticker=t, name=t, score=score, kind=kind, confidence=0.5,
+                            technical_score=0.1, fundamental_score=0.0, has_fundamental=False,
+                            reasons=[], flow_intensity=flow, quality_points=q)
+    n = store.snapshot_signals([_sig("005930", 1.8, "BUY", flow=0.2, q=4)], date="2026-07-08")
+    assert n == 1
+    store.snapshot_signals([_sig("005930", 2.0, "BUY"), _sig("000660", 0.5, "HOLD")], date="2026-07-09")
+    df = store.load_signal_history()
+    assert len(df) == 3 and set(df["date"]) == {"2026-07-08", "2026-07-09"}
+    # 같은 날 재실행 → 그 날짜만 갱신(중복 없음)
+    store.snapshot_signals([_sig("005930", 2.5, "BUY")], date="2026-07-09")
+    df = store.load_signal_history()
+    d9 = df[df["date"] == "2026-07-09"]
+    assert len(d9) == 1 and float(d9.iloc[0]["score"]) == 2.5   # 덮어씀
+    assert len(df[df["date"] == "2026-07-08"]) == 1              # 다른 날은 유지
