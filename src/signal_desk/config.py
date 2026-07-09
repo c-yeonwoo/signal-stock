@@ -41,6 +41,17 @@ def typecast_model() -> str:
     return os.environ.get("TYPECAST_MODEL", "ssfm-v30")
 
 
+def telegram_token() -> str | None:
+    """텔레그램 봇 토큰(.env TELEGRAM_BOT_TOKEN). 알림 푸시용. 없으면 in-app 알림만."""
+    return os.environ.get("TELEGRAM_BOT_TOKEN")
+
+
+def telegram_chat_ids() -> list[str]:
+    """알림 받을 채팅 ID 목록(.env TELEGRAM_CHAT_ID, 콤마 구분 — 가족 공용/그룹)."""
+    raw = os.environ.get("TELEGRAM_CHAT_ID", "")
+    return [c.strip() for c in raw.split(",") if c.strip()]
+
+
 def kis_credentials() -> dict | None:
     """KIS 자동매매봇 인증정보. 하나라도 없으면 None(그레이스풀 폴백).
 
