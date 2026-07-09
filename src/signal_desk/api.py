@@ -22,7 +22,7 @@ from fastapi import File as FastFile
 from fastapi import Form, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from signal_desk import auth, bot, config, db, kb, shortform, signalcfg, store, strategy
+from signal_desk import auth, bot, config, db, kb, notify, shortform, signalcfg, store, strategy
 from signal_desk.reference import cycle, gurus as gurus_ref, sectors, us_ko, valuechain
 from signal_desk.signals import macro, narrative, opportunity, rebalance, regime, scenario, target, valuation
 from signal_desk.signals.engine import (
@@ -127,6 +127,10 @@ async def _bot_loop():
                     result = bot.run_once(uid, market=mkt)
                     if not result.get("ok"):
                         log.info("봇 실행 스킵(uid=%s, %s): %s", uid, mkt, result.get("reason"))
+                    elif uid not in bot.REFERENCE_BOTS:  # 실제 유저 체결만 푸시(레퍼런스 봇은 제외)
+                        _push_trades(mkt, result)
+                if uid not in bot.REFERENCE_BOTS:
+                    _scan_alerts(uid)  # 관심종목 시그널 변동 능동 스캔 → 텔레그램 푸시(앱 안 열어도)
             # 하루 1회(평일 마감 후): 공용 KB 갱신 + 유저별 종가 스냅샷
             now = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
             if enabled and now.weekday() < 5 and now.time() >= datetime.time(15, 40) \
@@ -303,9 +307,26 @@ def _scan_alerts(uid: int) -> None:
         if old is None:
             db.alert_state_set(uid, t, cur)  # 최초 관측은 기록만(알림 없음)
         elif old != cur:
-            db.alert_add(uid, t, names.get(t, t),
-                         f"시그널 {_KIND_KO.get(old, old)} → {_KIND_KO.get(cur, cur)} (점수 {sig.score:+.2f})")
+            name = names.get(t, t)
+            msg = f"시그널 {_KIND_KO.get(old, old)} → {_KIND_KO.get(cur, cur)} (점수 {sig.score:+.2f})"
+            db.alert_add(uid, t, name, msg)
             db.alert_state_set(uid, t, cur)
+            notify.push(f"📊 {name}({t}) {msg}")  # 텔레그램 능동 푸시(미설정 시 no-op, alert_state로 중복 방지)
+
+
+def _push_trades(market: str, result: dict) -> None:
+    """봇 체결(매수·매도)을 텔레그램으로 푸시. note(청산 사유 등)를 사람이 읽기 쉽게 표기."""
+    if not notify.available():
+        return
+    lines = []
+    for b in result.get("buys", []):
+        lines.append(f"🟢 매수 {b.get('name', b.get('ticker'))} {b.get('qty')}주")
+    for s in result.get("sells", []):
+        detail = s.get("note") or s.get("reason") or ""
+        lines.append(f"🔴 매도 {s.get('name', s.get('ticker'))} {s.get('qty')}주"
+                     + (f" · {detail}" if detail else ""))
+    if lines:
+        notify.push(f"🤖 봇 체결 ({market.upper()})\n" + "\n".join(lines[:10]))
 
 
 @app.get("/api/alerts")
