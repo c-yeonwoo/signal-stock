@@ -1456,6 +1456,54 @@ def signal_peers_get(ticker: str, market: str = "kospi"):
     return {"ready": True, "sector": sec, "peer_count": len(peer_tks), "metrics": metrics, "peers": peers}
 
 
+@lru_cache(maxsize=1)
+def _corp_codes():
+    """DART stock_code→corp_code (zip 다운로드) — 요청마다 재다운로드 방지용 프로세스 캐시."""
+    from signal_desk.ingest import dart
+    return dart.corp_codes()
+
+
+@lru_cache(maxsize=256)
+def _disclosures_cached(corp_code: str, bgn: str, end: str) -> tuple:
+    """공시 목록 캐시 — (report_nm, rcept_dt, rcept_no) 튜플. 키에 날짜 포함이라 매일 자연 무효화."""
+    from signal_desk.ingest import dart
+    return tuple((r["report_nm"], r["rcept_dt"], r["rcept_no"]) for r in dart.disclosures(corp_code, bgn, end))
+
+
+def _disc_kind(nm: str) -> str:
+    """공시명 → 이벤트 성격. good(호재)·caution(주의: 악재/희석/소송)·note(그 외 주목)."""
+    if any(k in nm for k in kb._DISC_GOOD):
+        return "good"
+    if any(k in nm for k in (kb._DISC_CRITICAL + kb._DISC_SERIOUS)):
+        return "caution"
+    return "note"
+
+
+@app.get("/api/signals/{ticker}/events")
+def signal_events_get(ticker: str, market: str = "kospi"):
+    """종목별 과거 이벤트 타임라인 — 최근 DART 주요공시(호재/주의) + 최근 연배당. KR만(DART).
+    미래 일정 아님(공시는 접수 완료분) · 자문 아님, 맥락 참고용."""
+    if market == "us":
+        return {"ready": False, "reason": "공시·배당 이력은 현재 국내(DART) 종목만 지원합니다."}
+    corp = _corp_codes().get(ticker)
+    disclosures = []
+    if corp:
+        end = datetime.date.today()
+        bgn = end - datetime.timedelta(days=180)   # 최근 6개월 주요공시
+        for nm, d, rno in _disclosures_cached(corp, bgn.strftime("%Y%m%d"), end.strftime("%Y%m%d")):
+            if not any(k in nm for k in kb._DISC_NOTABLE):   # 분기보고서·IR 등 routine 제외(노이즈)
+                continue
+            disclosures.append({"date": f"{d[:4]}-{d[4:6]}-{d[6:8]}" if len(d) == 8 else d, "name": nm,
+                                "kind": _disc_kind(nm),
+                                "url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rno}"})
+    f = store.load_fundamentals().get(ticker) or {}
+    q = _quotes().get(ticker) or {}
+    dps, price = f.get("dps"), q.get("price")
+    dividend = ({"dps": round(dps, 1), "div_yield": round(dps / price * 100, 2) if (dps and price) else None}
+                if dps and dps > 0 else None)
+    return {"ready": True, "disclosures": disclosures[:20], "dividend": dividend, "has_corp": bool(corp)}
+
+
 @app.get("/api/guru-screens")
 def guru_screens_get(market: str = "kospi"):
     """거장 전략 스크린 — 버핏·그레이엄·린치식 규칙으로 유니버스 필터(교육용 프리셋, 자문 아님).
