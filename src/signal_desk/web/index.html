@@ -456,6 +456,7 @@
           <div id="signal-peers" class="detail-panel" style="display:none;font-size:12px">
             <div id="signal-peers-body"></div>
           </div>
+          <div id="signal-events" class="detail-panel" style="display:none;font-size:12px"></div>
         </div>
         <details id="signal-help" style="font-size:11px;color:var(--dim);margin-top:8px">
           <summary style="cursor:pointer;color:var(--accent);font-weight:600">시그널 계산 기준 · 용어 해설</summary>
@@ -1673,6 +1674,7 @@ const _DETAIL_PANELS = [
   { key: 'kb', label: '정성 심리', el: 'signal-kb' },
   { key: 'factor', label: '팩터 강약', el: 'signal-factors' },
   { key: 'peers', label: '동종업계', el: 'signal-peers' },
+  { key: 'events', label: '공시·이력', el: 'signal-events' },
 ];
 let _activeDetailTab = 'narr';
 function setDetailHas(elId, has){ const el = document.getElementById(elId); if (el) el.dataset.has = has ? '1' : '0'; }
@@ -1747,6 +1749,37 @@ async function renderPeers(ticker){
     + (peerRows ? `<div style="color:var(--dim);margin:8px 0 3px">같은 섹터 대표 종목 (시총순)</div>
         <table class="dtable"><thead><tr><th>종목</th><th class="num">PER</th><th class="num">PBR</th><th class="num">ROE%</th></tr></thead><tbody>${peerRows}</tbody></table>` : '');
   setDetailHas('signal-peers', true);
+  buildDetailTabs();
+}
+
+// 공시·이력 타임라인 — 최근 DART 주요공시(호재/주의) + 최근 연배당. KR만. 과거 이벤트(미래 일정 아님).
+const _EVT_STYLE = { good: { c: 'var(--sig-buy)', t: '호재' }, caution: { c: 'var(--sig-sell)', t: '주의' }, note: { c: 'var(--dim-2)', t: '주목' } };
+async function renderEvents(ticker){
+  const el = document.getElementById('signal-events');
+  if (_sigMarket === 'us' || ticker === INDEX_TICKER) { setDetailHas('signal-events', false); return; }
+  el.innerHTML = '<div class="placeholder" style="padding:6px 0">불러오는 중…</div>';
+  let d;
+  try { d = await (await fetch(`/api/signals/${encodeURIComponent(ticker)}/events`)).json(); }
+  catch (e) { setDetailHas('signal-events', false); buildDetailTabs(); return; }
+  if (_selectedTicker !== ticker) return;   // 로드 중 선택 바뀌면 폐기
+  if (!d.ready) { setDetailHas('signal-events', false); buildDetailTabs(); return; }
+  const div = d.dividend
+    ? `<div style="margin-bottom:8px;padding:7px 9px;border-radius:var(--r-md);background:var(--bg);border:1px solid var(--line)">
+        💰 <b>최근 연배당</b> 주당 ${fmtNum(d.dividend.dps, 0)}원${d.dividend.div_yield != null ? ` · 시가배당률 <b>${fmtNum(d.dividend.div_yield, 2)}%</b>` : ''}
+        <span style="color:var(--dim-2)">· 결산배당(연 1회 근사) · 참고용</span></div>` : '';
+  const rows = (d.disclosures || []).map(e => {
+    const st = _EVT_STYLE[e.kind] || _EVT_STYLE.note;
+    return `<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line)">
+      <span style="flex:0 0 74px;color:var(--dim);font-variant-numeric:tabular-nums">${esc(e.date)}</span>
+      <span style="flex:0 0 34px;color:${st.c};font-weight:700">${st.t}</span>
+      <a href="${esc(e.url)}" target="_blank" rel="noopener" style="flex:1 1 auto;color:var(--txt);text-decoration:none">${esc(e.name)} ↗</a>
+    </div>`;
+  }).join('');
+  el.innerHTML = div
+    + (rows
+        ? `<div style="color:var(--dim);margin-bottom:2px">최근 6개월 주요공시 <span style="color:var(--dim-2)">· 클릭 시 DART 원문 · 과거 이벤트(예정 일정 아님)</span></div>${rows}`
+        : (div ? '' : '<div class="placeholder" style="padding:6px 0">최근 6개월 주요공시가 없습니다.</div>'));
+  setDetailHas('signal-events', !!(rows || div));
   buildDetailTabs();
 }
 
@@ -1830,6 +1863,7 @@ async function showSignalChart(ticker, item){
   setDetailHas('signal-kb', !!(item && (item.kb || evWarn)));
   renderFactors(item);
   renderPeers(ticker);
+  renderEvents(ticker);
   buildDetailTabs();
   const holder = document.getElementById('signal-chart');
   try {
