@@ -451,19 +451,31 @@ def replay_signal_kinds(closes: list[float], config: SignalConfig | None = None)
 
 
 def signal_zones(
-    dates: list[str], closes: list[float], config: SignalConfig | None = None
+    dates: list[str], closes: list[float], config: SignalConfig | None = None,
+    stored: dict[str, dict] | None = None,
 ) -> list[dict]:
-    """연속된 동일 시그널(BUY/SELL) 구간을 [{start,end,kind,reasons}]로 압축 — 차트 markArea/마커용.
-    HOLD는 제외. reasons는 구간 시작(=시그널 전환) 시점의 가격기반 판단 근거(호버 설명용)."""
+    """연속된 동일 시그널(BUY/SELL) 구간을 [{start,end,kind,reasons,score,actual}]로 압축 — 차트용.
+    HOLD 제외. `stored`(date→{kind,score})가 있으면 그 날짜는 **실측 시그널(전 팩터, 당일 저장)**을
+    쓰고, 없는 날짜만 가격기반 재현(기술·낙폭·모멘텀+추세)으로 폴백한다. 구간은 kind와 출처(실측/재현)가
+    모두 같을 때만 병합해, 각 구간이 한 출처로 균일하게 유지된다."""
     config = config or SignalConfig()
+    stored = stored or {}
     series = compute_indicator_series(closes, config)
-    kinds, reasons_at, scores_at = [], [], []
+    kinds, sources, reasons_at, scores_at = [], [], [], []
     for k in range(len(closes)):
-        combined = combine(_price_only_components(closes, series, k, config), config)
-        _apply_trend_gate(combined, closes, series, k, config)
-        kinds.append(combined["kind"])
-        reasons_at.append(combined["reasons"])
-        scores_at.append(combined["score"])
+        st = stored.get(dates[k])
+        if st:  # 실측 우선
+            kinds.append(st["kind"])
+            sources.append("actual")
+            reasons_at.append(["실측 — 당일 저장된 시그널(전 팩터)"])
+            scores_at.append(st.get("score"))
+        else:   # 폴백: 가격기반 재현
+            combined = combine(_price_only_components(closes, series, k, config), config)
+            _apply_trend_gate(combined, closes, series, k, config)
+            kinds.append(combined["kind"])
+            sources.append("replay")
+            reasons_at.append(combined["reasons"])
+            scores_at.append(combined["score"])
     zones = []
     i, n = 0, len(kinds)
     while i < n:
@@ -471,10 +483,10 @@ def signal_zones(
             i += 1
             continue
         j = i
-        while j < n and kinds[j] == kinds[i]:
+        while j < n and kinds[j] == kinds[i] and sources[j] == sources[i]:
             j += 1
         zones.append({"start": dates[i], "end": dates[j - 1], "kind": kinds[i],
-                      "reasons": reasons_at[i], "score": scores_at[i]})
+                      "reasons": reasons_at[i], "score": scores_at[i], "actual": sources[i] == "actual"})
         i = j
     return zones
 

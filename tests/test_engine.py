@@ -180,3 +180,28 @@ def test_signal_zones_compresses_consecutive_buy_days():
 def test_signal_zones_empty_for_flat_series():
     zones = engine.signal_zones(["2026-01-0" + str(i) for i in range(1, 6)], [100.0] * 5)
     assert zones == []
+
+
+def test_signal_zones_prefers_stored_actual_signals():
+    # 평평한 시세(가격기반=관망)여도, 저장된 실측 시그널이 있으면 그 날짜는 실측 kind로 구간 생성
+    dates = [f"2026-07-{i:02d}" for i in range(1, 6)]
+    closes = [100.0] * 5
+    assert engine.signal_zones(dates, closes) == []           # 재현만이면 구간 없음
+    stored = {"2026-07-03": {"kind": "BUY", "score": 1.8}, "2026-07-04": {"kind": "BUY", "score": 2.1}}
+    zones = engine.signal_zones(dates, closes, stored=stored)
+    assert len(zones) == 1
+    z = zones[0]
+    assert z["kind"] == "BUY" and z["actual"] is True
+    assert (z["start"], z["end"]) == ("2026-07-03", "2026-07-04")   # 연속 실측 병합
+    assert z["score"] == 1.8   # 구간 시작 시점 실측 점수
+
+
+def test_signal_zones_does_not_merge_across_sources():
+    # 재현 BUY 구간과 실측 BUY 구간은 출처가 달라 병합되지 않는다
+    closes = [100 - i for i in range(20)]   # 지속 하락 → 인덱스 14~ 과매도 BUY(재현)
+    dates = [f"2026-01-{i + 1:02d}" for i in range(20)]
+    stored = {"2026-01-20": {"kind": "BUY", "score": 2.5}}   # 마지막 날만 실측
+    zones = engine.signal_zones(dates, closes, stored=stored)
+    assert any(z["actual"] for z in zones) and any(not z["actual"] for z in zones)
+    last = [z for z in zones if z["end"] == "2026-01-20"][0]
+    assert last["actual"] is True and last["score"] == 2.5

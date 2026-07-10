@@ -680,6 +680,8 @@ def signal_chart_get(ticker: str, market: str = "kospi"):
     closes = [h["close"] for h in history]
     dates = [h["date"] for h in history]
     series = compute_indicator_series(closes)
+    stored = store.signal_history_for(ticker) if market != "us" else {}  # 실측 시그널(PIT) 우선
+    actual_dates = [d for d in dates if d in stored]
     return {
         "ready": True,
         "ticker": ticker,
@@ -690,7 +692,8 @@ def signal_chart_get(ticker: str, market: str = "kospi"):
         "ma60": series["ma_mid"],
         "ma120": series["ma_long"],
         "rsi": series["rsi"],
-        "zones": signal_zones(dates, closes),
+        "zones": signal_zones(dates, closes, stored=stored),
+        "actual_from": actual_dates[0] if actual_dates else None,  # 이 날짜 이후는 실측(그 전은 재현)
         "macd": series["macd"]["macd"],
         "macd_signal": series["macd"]["signal"],
         "macd_hist": series["macd"]["histogram"],
