@@ -82,6 +82,18 @@ def toss_credentials() -> tuple[str, str] | None:
     return (cid, csec) if (cid and csec) else None
 
 
+def toss_account() -> str:
+    """토스 자산 API 계좌 식별자(X-Tossinvest-Account). 앱에 연동된 계좌 인덱스, 기본 '1'."""
+    return os.environ.get("TOSS_ACCOUNT", "1")
+
+
+def toss_account_owner() -> str | None:
+    """토스 '실계좌 보유내역'을 조회할 수 있는 단 하나의 소유자 이메일(소문자).
+    미설정이면 None → 아무도 조회 불가(안전 기본값). 서버엔 계좌 자격증명이 1개뿐이라 owner 격리 필수."""
+    e = (os.environ.get("TOSS_ACCOUNT_OWNER") or "").strip().lower()
+    return e or None
+
+
 def ecos_key() -> str | None:
     """한국은행 ECOS(기준금리·거시지표) API 키."""
     return os.environ.get("ECOS_API_KEY")
