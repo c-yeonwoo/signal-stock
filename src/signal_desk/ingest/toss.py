@@ -81,6 +81,28 @@ def _get(path: str, params: dict | None = None) -> dict | list | None:
         return None
 
 
+def holdings(account: str = "1") -> dict | None:
+    """앱에 연동된 계좌의 실보유 자산(자산 API /api/v1/holdings). 반환: result 객체
+    {totalPurchaseAmount, marketValue, profitLoss, items:[...]} 또는 None(자격증명·조회 실패).
+    ⚠️ 개인 계좌 데이터 — 호출·노출은 반드시 owner-gated(api 계층)에서만. 여긴 요청만 담당."""
+    tok = _access_token()
+    if not tok:
+        return None
+    req = urllib.request.Request(_BASE + "/api/v1/holdings", headers={
+        "authorization": "Bearer " + tok, "accept": "application/json",
+        "X-Tossinvest-Account": str(account)})
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        return body.get("result") if isinstance(body, dict) else None
+    except urllib.error.HTTPError as e:
+        log.warning("토스 보유내역 실패: HTTP %s", e.code)
+        return None
+    except Exception as e:
+        log.warning("토스 보유내역 실패: %s", type(e).__name__)
+        return None
+
+
 def _rows(body) -> list[dict]:
     """응답 리스트 추출 — 토스는 {result:[...]} 형태. 방어적으로 몇 가지 키도 대응."""
     if isinstance(body, list):

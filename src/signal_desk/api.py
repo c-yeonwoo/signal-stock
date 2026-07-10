@@ -1551,8 +1551,8 @@ def _chat_signal_summary(ticker: str) -> dict | None:
             "최근악재": sig.event_note if sig.event_risk else None}
 
 
-def _make_chat_dispatch(uid: int):
-    """tool_name+input → JSON 문자열(실데이터). uid는 포트폴리오 조회에 필요해 클로저로 캡처."""
+def _make_chat_dispatch(uid: int, is_toss_owner: bool = False):
+    """tool_name+input → JSON 문자열(실데이터). uid는 봇 포폴 조회용, is_toss_owner는 실계좌 조회 격리용."""
     def _j(obj):
         return json.dumps(obj, ensure_ascii=False, default=str)
 
@@ -1600,8 +1600,38 @@ def _make_chat_dispatch(uid: int):
             hits = [{"종목": names.get(d["ticker"], d["ticker"]), "코드": d["ticker"], "유형": d.get("doc_class"),
                      "제목": d.get("title"), "요약": d.get("summary")} for d in docs]
             return _j({"검색어": kw, "결과": hits or "관련 KB 문서 없음"})
+        if name == "get_real_holdings":
+            if not is_toss_owner:   # 격리: 계정 소유자 본인만
+                return _j({"error": "실계좌(토스) 보유내역은 계정 소유자 본인만 조회할 수 있어요"})
+            s = _toss_holdings_summary()
+            return _j(s or {"error": "토스 실계좌 조회 실패(연동·자격증명 확인 필요)"})
         return _j({"error": f"알 수 없는 도구: {name}"})
     return dispatch
+
+
+def _is_toss_owner(request: Request) -> bool:
+    """요청자가 토스 실계좌 소유자(단일)인지. owner 미설정이면 항상 False(안전 기본)."""
+    owner = config.toss_account_owner()
+    if not owner:
+        return False
+    u = auth.current_user(request.cookies.get(auth.COOKIE))
+    return bool(u and (u.get("email") or "").lower() == owner)
+
+
+def _toss_holdings_summary() -> dict | None:
+    """토스 실보유 → 챗봇/요약용 압축(실제 원화값). owner-gated 호출부에서만 사용."""
+    from signal_desk.ingest import toss
+    res = toss.holdings(config.toss_account())
+    if not res:
+        return None
+    items = [{"종목": it.get("name"), "코드": it.get("symbol"), "국가": it.get("marketCountry"),
+              "수량": it.get("quantity"), "평단": it.get("averagePurchasePrice"), "현재가": it.get("lastPrice"),
+              "손익률%": round(float((it.get("profitLoss") or {}).get("rate", 0)) * 100, 2)}
+             for it in (res.get("items") or [])]
+    pl = res.get("profitLoss") or {}
+    return {"총평가_원": (res.get("marketValue") or {}).get("amount", {}).get("krw"),
+            "총매입_원": (res.get("totalPurchaseAmount") or {}).get("krw"),
+            "총손익률%": round(float(pl.get("rate", 0)) * 100, 2), "보유": items}
 
 
 @app.post("/api/chat")
@@ -1611,13 +1641,28 @@ def chat_post(request: Request, data: dict = Body(...)):
     if not message:
         return {"ok": False, "reply": "무엇이 궁금한지 적어 주세요."}
     history = data.get("history") or []   # [{role, content}] — 프런트가 최근 몇 턴만 전달
-    return chat.answer(message, history=history[-8:], dispatch=_make_chat_dispatch(_uid(request)))
+    return chat.answer(message, history=history[-8:],
+                       dispatch=_make_chat_dispatch(_uid(request), _is_toss_owner(request)))
 
 
 @app.get("/api/chat/meta")
 def chat_meta_get():
     """챗봇 사용 가능 여부 + 페르소나 이름(프런트 초기화용)."""
     return {"available": chat.llm.available(), "name": chat.PERSONA_NAME}
+
+
+@app.get("/api/my-holdings")
+def my_holdings_get(request: Request):
+    """토스 실계좌 보유내역 — 계정 소유자 '본인만'(owner-gated). 그 외 전원 403(데이터 경로 진입 불가).
+    서버엔 토스 자격증명이 1개(소유자 계좌)뿐이라 반드시 owner로 격리한다."""
+    if not _is_toss_owner(request):
+        return JSONResponse({"ready": False, "forbidden": True,
+                             "reason": "본인 계좌 소유자만 조회할 수 있습니다."}, status_code=403)
+    from signal_desk.ingest import toss
+    res = toss.holdings(config.toss_account())
+    if res is None:
+        return {"ready": False, "reason": "토스 자산 API 조회 실패 — 자격증명·계좌 연동을 확인하세요."}
+    return {"ready": True, **res}
 
 
 @app.get("/api/guru-screens")

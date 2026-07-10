@@ -54,7 +54,12 @@ TOOLS = [
     },
     {
         "name": "get_portfolio",
-        "description": "자동매매 봇의 모의 포트폴리오(보유 종목·평가손익·현금)를 조회한다. 사용자 '내 포트폴리오' 질문에 사용.",
+        "description": "자동매매 봇의 모의 포트폴리오(보유 종목·평가손익·현금)를 조회한다. '봇 포트폴리오' 질문에 사용.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_real_holdings",
+        "description": "사용자의 실제 토스증권 계좌 보유내역(종목·수량·평단·현재가·손익)을 조회한다. '내 실계좌/토스 계좌/내 실제 보유' 질문에 사용. 계정 소유자 본인만 가능(아니면 거부됨).",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
