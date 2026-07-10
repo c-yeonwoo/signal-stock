@@ -880,6 +880,22 @@ def load_signal_history():
     return pd.read_parquet(SIGNAL_HISTORY_FILE)
 
 
+def signal_history_for(ticker: str) -> dict[str, dict]:
+    """종목별 실측 시그널 이력 {date: {kind, score}} — 차트 구간을 '실측 우선(없으면 가격기반 재현)'
+    으로 그리는 데 사용. PIT 스냅샷을 쌓기 시작한 날짜부터만 존재."""
+    df = load_signal_history()
+    if df.empty or "ticker" not in df.columns:
+        return {}
+    sub = df[df["ticker"] == ticker]
+    out = {}
+    for _, r in sub.iterrows():
+        try:
+            out[str(r["date"])] = {"kind": str(r["kind"]), "score": float(r["score"])}
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def price_sanity(tickers: list[str] | None = None) -> dict:
     """캐시 종가와 토스 실시간가의 비율로 시세 데이터가 '실제 스케일'인지 진단한다.
     ratio(캐시/실시간)≈1이면 실데이터, 종목별로 크게(>15%) 벗어나면 스케일·합성 의심.

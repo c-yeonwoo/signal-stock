@@ -81,3 +81,9 @@ def test_snapshot_signals_accumulates_pit(tmp_path, monkeypatch):
     d9 = df[df["date"] == "2026-07-09"]
     assert len(d9) == 1 and float(d9.iloc[0]["score"]) == 2.5   # 덮어씀
     assert len(df[df["date"] == "2026-07-08"]) == 1              # 다른 날은 유지
+
+    # signal_history_for: 종목별 {date: {kind, score}} — 차트 실측 우선용
+    hist = store.signal_history_for("005930")
+    assert set(hist) == {"2026-07-08", "2026-07-09"}
+    assert hist["2026-07-09"] == {"kind": "BUY", "score": 2.5}
+    assert store.signal_history_for("999999") == {}             # 이력 없는 종목
