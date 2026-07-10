@@ -880,6 +880,23 @@ def load_signal_history():
     return pd.read_parquet(SIGNAL_HISTORY_FILE)
 
 
+def load_all_dated_closes() -> dict[str, tuple[list[str], list[float]]]:
+    """ticker -> (dates[], closes[]) 오래된→최신, 국내+미국 통합. 실측 성과(accuracy) 조인용.
+    각 parquet을 1회만 읽어 종목별 (날짜, 종가) 짝을 만든다(실시간 잠정봉은 제외 — 성숙 판정 왜곡 방지)."""
+    out: dict[str, tuple[list[str], list[float]]] = {}
+    for f in (PRICES_FILE, US_PRICES_FILE):
+        if not f.exists():
+            continue
+        df = pd.read_parquet(f)
+        if df.empty:
+            continue
+        df = df.sort_values(["ticker", "date"])
+        for t, g in df.groupby("ticker"):
+            out[str(t)] = ([str(d) for d in g["date"].tolist()],
+                           [float(c) for c in g["close"].tolist()])
+    return out
+
+
 def signal_history_for(ticker: str) -> dict[str, dict]:
     """종목별 실측 시그널 이력 {date: {kind, score}} — 차트 구간을 '실측 우선(없으면 가격기반 재현)'
     으로 그리는 데 사용. PIT 스냅샷을 쌓기 시작한 날짜부터만 존재."""

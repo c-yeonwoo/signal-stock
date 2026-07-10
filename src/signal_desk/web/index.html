@@ -846,6 +846,12 @@
       <div id="bt-analysis" class="placeholder" style="padding:20px 0">펼치면 불러옵니다…</div>
     </details>
 
+    <div class="card" id="accuracy-card" style="margin-top:16px">
+      <div style="font-weight:700;font-size:15px">📈 실측 성과 <span style="color:var(--dim);font-weight:600;font-size:12px">· track record</span></div>
+      <p class="page-desc" style="margin:8px 0 4px">매일 저장되는 <b>실제 시그널</b>(전 팩터·전 게이트 적용)이 이후 실현 수익률로 얼마나 맞았는지 — 백테스트(시뮬레이션)와 달리 시스템이 <b>진짜 낸 신호</b>의 성적입니다. 스냅샷 도입일부터 매일 누적되며, 수익률은 종목 내 비율이라 스케일 시세와 무관합니다.</p>
+      <div id="accuracy-body" class="placeholder" style="padding:16px 0">불러오는 중…</div>
+    </div>
+
     </div><!-- /#admin-engine -->
 
     <div id="admin-kb" style="display:none">
@@ -3324,7 +3330,7 @@ function switchAdminSeg(seg){
   document.getElementById('admin-engine').style.display = seg === 'engine' ? '' : 'none';
   document.getElementById('admin-kb').style.display = seg === 'kb' ? '' : 'none';
   document.getElementById('admin-shortform').style.display = seg === 'shortform' ? '' : 'none';
-  if (seg === 'engine') loadEngine();   // 백테스트는 접이식(bt-details) 펼칠 때만 로드
+  if (seg === 'engine') { loadEngine(); loadAccuracy(); }   // 백테스트는 접이식(bt-details) 펼칠 때만 로드
   if (seg === 'kb') { loadKbDocs(); _initDropzone(); }
   if (seg === 'shortform') { loadShortform(); loadSfBg(); }
   history.replaceState(null, '', '#admin/' + seg);   // 새로고침 시 서브탭 유지
@@ -3558,6 +3564,69 @@ async function loadBacktestAnalysis(){
       ${d.has_pit ? '' : '<p class="page-desc" style="margin:8px 0 0;color:var(--sell)">※ point-in-time 재무 미수집 — 기본적 팩터 제외. /api/refresh로 수집하세요.</p>'}`;
   } catch (e) { el.textContent = '불러오지 못했습니다.'; }
 }
+
+// 실측 성과(track record) — 실제 낸 시그널이 이후 수익률로 얼마나 맞았나. 매일 누적.
+const _ACC_KIND = { STRONG_BUY: '강력매수', BUY: '매수', SELL: '매도', STRONG_SELL: '강력매도' };
+const _ACC_FACTOR = { technical: '기술', fundamental: '기본', valuation: '밸류', reversion: '낙폭',
+  qualitative: '정성(KB)', flow: '수급', quality: '퀄리티', momentum: '모멘텀' };
+async function loadAccuracy(){
+  const el = document.getElementById('accuracy-body');
+  if (!el) return;
+  try {
+    const d = await (await fetch('/api/accuracy')).json();
+    const cov = d.coverage || {};
+    const covLine = `누적 <b>${cov.dates || 0}</b>일 · 시그널 <b>${(cov.rows || 0).toLocaleString()}</b>건`
+      + (cov.from ? ` <span style="color:var(--dim-2)">(${cov.from}~${cov.to})</span>` : '');
+    if (!d.ready) {
+      el.className = '';
+      el.innerHTML = `<div style="padding:14px;border:1px dashed var(--line-strong);border-radius:10px;text-align:center">
+        <div style="font-size:26px">🌱</div>
+        <div style="font-weight:700;margin:4px 0">track record 누적 중</div>
+        <div style="color:var(--dim);font-size:12px">${covLine}<br>${d.primary_horizon}거래일 성숙 표본 <b>${cov.matured_primary || 0}</b>건 — 시그널을 낸 뒤 ${d.primary_horizon}거래일이 지나야 채점됩니다. 매일 마감 후 쌓여요.</div>
+        ${d.reason ? `<div style="color:var(--dim-2);font-size:11px;margin-top:6px">${esc(d.reason)}</div>` : ''}</div>`;
+      return;
+    }
+    const h = d.primary_horizon;
+    const prec = d.buy_precision_pct;
+    const precColor = prec >= 55 ? 'var(--sig-buy)' : prec < 45 ? 'var(--sig-sell)' : 'var(--dim)';
+    // 티어 표(primary horizon)
+    const t = (d.tiers || {})[h] || {};
+    const retCell = v => v == null ? '<td style="color:var(--dim-2)">–</td>'
+      : `<td style="color:${v > 0 ? 'var(--sig-buy)' : 'var(--sig-sell)'}">${v > 0 ? '+' : ''}${fmtNum(v, 2)}%</td>`;
+    const hitCell = (v, buyish) => v == null ? '<td style="color:var(--dim-2)">–</td>'
+      : `<td style="font-weight:700;color:${(v >= 55) === buyish ? (buyish ? 'var(--sig-buy)' : 'var(--dim)') : ''}">${fmtNum(v, 1)}%</td>`;
+    const tierRows = ['STRONG_BUY', 'BUY', 'SELL', 'STRONG_SELL'].map(k => {
+      const s = t[k] || {}; if (!s.n) return '';
+      return `<tr><td>${_ACC_KIND[k]}</td><td style="color:var(--dim)">${s.n}</td>
+        <td style="font-weight:700">${s.hit_rate == null ? '–' : fmtNum(s.hit_rate, 1) + '%'}</td>
+        ${retCell(s.avg_ret)}</tr>`;
+    }).join('') || '<tr><td colspan="4" style="color:var(--dim-2)">성숙 표본 없음</td></tr>';
+    // 팩터 IC(|IC| 내림차순)
+    const ics = Object.entries(d.factor_ic || {}).filter(([, v]) => v != null)
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    const icRows = ics.length ? ics.map(([f, v]) => {
+      const w = Math.min(100, Math.abs(v) * 100 / 0.15);   // |IC| 0.15을 만점으로 시각화
+      const c = v > 0 ? 'var(--sig-buy)' : 'var(--sig-sell)';
+      return `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px">
+        <span style="width:72px;color:var(--dim)">${_ACC_FACTOR[f] || f}</span>
+        <span style="flex:1;background:var(--line);border-radius:4px;height:8px;position:relative">
+          <span style="position:absolute;left:${v < 0 ? 'auto' : '50%'};right:${v < 0 ? '50%' : 'auto'};width:${w / 2}%;height:100%;background:${c};border-radius:4px"></span>
+          <span style="position:absolute;left:50%;top:-2px;width:1px;height:12px;background:var(--line-strong)"></span></span>
+        <span style="width:48px;text-align:right;font-weight:700;color:${c}">${v > 0 ? '+' : ''}${fmtNum(v, 3)}</span></div>`;
+    }).join('') : `<div style="color:var(--dim-2);font-size:12px">표본 ${d.ic_min_samples}건 이상 쌓이면 표시됩니다.</div>`;
+    el.className = '';
+    el.innerHTML = `
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:2px">
+        <span style="font-size:13px;color:var(--dim)">매수 정밀도 <span style="color:var(--dim-2)">· ${h}거래일</span></span>
+        <span style="font-size:26px;font-weight:800;color:${precColor}">${prec == null ? '–' : fmtNum(prec, 1) + '%'}</span>
+        <span style="font-size:12px;color:var(--dim-2)">매수 시그널 ${d.buy_sample}건 중 상승 비율</span></div>
+      <table class="dtable" style="margin-top:8px"><thead><tr><th>티어</th><th>표본</th><th>적중률</th><th>평균수익</th></tr></thead><tbody>${tierRows}</tbody></table>
+      <div style="font-size:13px;font-weight:700;margin:16px 0 4px">팩터 예측력 <span style="color:var(--dim);font-weight:500">· Spearman IC (팩터값↑ vs ${h}일 수익, 양수=예측 유효)</span></div>
+      ${icRows}
+      <p class="page-desc" style="margin:10px 0 0;font-size:11px;color:var(--dim-2)">${covLine} · ${h}거래일 성숙 <b>${cov.matured_primary}</b>건. 밸류는 저평가일수록 값이 낮아 IC 부호가 반대로 해석됩니다.</p>`;
+  } catch (e) { el.className = ''; el.textContent = '불러오지 못했습니다.'; }
+}
+
 async function saveEngine(){
   const btn = event.target; btn.disabled = true; const t = btn.textContent; btn.textContent = '적용 중…';
   try {
