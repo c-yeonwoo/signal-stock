@@ -374,6 +374,12 @@
   <button class="subtab" data-seg="rebal" onclick="switchTradingSeg('rebal')">내 포트폴리오</button>
   <button class="subtab" data-seg="dividend" onclick="switchTradingSeg('dividend')">배당 플래너</button>
 </nav>
+<nav class="subnav" id="subnav-cycle" style="display:none">
+  <button class="subtab on" data-cseg="cycle" onclick="switchCycleSeg('cycle')">경기 사이클</button>
+  <button class="subtab" data-cseg="vc" onclick="switchCycleSeg('vc')">밸류체인</button>
+  <button class="subtab" data-cseg="learn" onclick="switchCycleSeg('learn')">학습</button>
+  <button class="subtab" data-cseg="guru" onclick="switchCycleSeg('guru')">거장 포트폴리오</button>
+</nav>
 
 <div class="market-bar" id="market-ribbon">
   <span class="tb-label">시황</span>
@@ -392,7 +398,10 @@
 
 <main>
   <div id="view-signal" class="view-app" style="display:none">
-    <div id="signal-scorecard" style="display:none;font-size:12px;background:var(--accent-weak);border-radius:var(--r-md);padding:9px 13px;margin-bottom:10px;line-height:1.5"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div id="signal-scorecard" style="display:none;flex:1 1 auto;font-size:12px;background:var(--accent-weak);border-radius:var(--r-md);padding:9px 13px;line-height:1.5"></div>
+      <button class="btn" style="margin-left:auto;white-space:nowrap;flex:0 0 auto" onclick="openHelp()">📖 시그널 계산 기준</button>
+    </div>
     <div class="sig-workspace">
       <div class="sig-list card" style="padding:0">
         <div class="seg-toggle" id="sig-market-seg" style="margin:10px 10px 0">
@@ -455,7 +464,7 @@
         <div id="signal-hero" style="display:none"></div>
         <div id="signal-chart"></div>
         <div id="signal-legend" style="display:none;font-size:11px;color:var(--dim);margin:4px 0">
-          <span style="color:var(--sig-buy);font-weight:700">● B</span> 매수 · <span style="color:var(--sig-sell);font-weight:700">● S</span> 매도 · <b>+</b>는 강력 시그널 — 호버 시 근거·점수 · 📍 = 현재 시그널(5단계) · 음영 = 유지 구간</div>
+          <span style="color:var(--sig-buy);font-weight:700">● B</span> 매수 · <span style="color:var(--sig-sell);font-weight:700">● S</span> 매도 · <b>+</b>는 강력 · 음영·B/S = <b>가격기반 재현</b>(기술·낙폭·모멘텀+추세, 과거 일별 재무·수급 없음) · 📍 = <b>현재 시그널</b>(전 팩터)</div>
         <div class="detail-tabs" id="detail-tabs" style="display:none"></div>
         <div class="detail-panels" id="detail-panels">
           <div id="signal-narrative" class="detail-panel placeholder" style="display:none;background:var(--accent-weak);
@@ -474,44 +483,42 @@
           </div>
           <div id="signal-events" class="detail-panel" style="display:none;font-size:12px"></div>
         </div>
-        <details id="signal-help" style="font-size:11px;color:var(--dim);margin-top:8px">
-          <summary style="cursor:pointer;color:var(--accent);font-weight:600">시그널 계산 기준 · 용어 해설</summary>
-          <div style="margin-top:6px;line-height:1.7;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-md);padding:9px 12px">
-            <b>종합점수(−3 ~ +3)로 5단계 판정</b><br>
-            강력매수 ≥ <b>+2.0</b> · 매수 ≥ <b>+1.2</b> · <b>관망 −1.2 ~ +1.2</b> · 매도 ≤ <b>−1.2</b> · 강력매도 ≤ <b>−2.0</b><br>
-            <b>팩터 가중</b>: 기술 35 · 재무 30 · 저평가 15 · 낙폭과대 20 · 수급 20 · 퀄리티 15 · 모멘텀 20 <span style="color:var(--dim-2)">(데이터 있는 팩터끼리 재정규화 · + KB 악재 veto · 하락추세 게이트)</span><br>
-            <span style="color:var(--sell)">※ 약세·조정 국면이면 매수 기준이 자동 상향돼, 점수가 +1.2를 넘어도 관망일 수 있습니다.</span>
-            <div id="glossary" style="margin-top:7px;border-top:1px solid var(--line);padding-top:6px"></div>
-          </div>
-        </details>
       </div>
     </div>
   </div>
 
 
   <div id="view-cycle" class="view-app" style="display:none">
-    <div class="card" id="cycle-current" style="margin-bottom:16px"><div class="placeholder" style="padding:8px 0">불러오는 중…</div></div>
-    <div class="card" style="margin-bottom:16px"><div id="cycle-chart" style="height:300px"></div></div>
-    <div class="phase-grid" id="cycle-phases"></div>
+    <div id="cycle-seg-cycle">
+      <div class="card" id="cycle-current" style="margin-bottom:16px"><div class="placeholder" style="padding:8px 0">불러오는 중…</div></div>
+      <div class="card" style="margin-bottom:16px"><div id="cycle-chart" style="height:300px"></div></div>
+      <div class="phase-grid" id="cycle-phases"></div>
+    </div>
 
-    <h3 class="page-head" style="font-size:18px;margin-top:28px" id="vc-anchor">밸류체인 <span style="color:var(--dim);font-size:13px;font-weight:600">· 주도섹터를 누르면 여기로 연결</span></h3>
-    <p class="page-desc">섹터별 업스트림~다운스트림 구조와 국내(코스피)·해외 대표기업. 국내 기업의 현재
-      시그널(관망 제외)이 뱃지로 표시되며, 누르면 시그널 차트로 이동합니다. (큐레이션 스냅샷 · 추천 아님)</p>
-    <div id="vc-cycle-banner" style="margin-bottom:10px"></div>
-    <div class="vc-sectors" id="vc-sectors"></div>
-    <div id="vc-detail"><div class="placeholder">불러오는 중…</div></div>
+    <div id="cycle-seg-vc" style="display:none">
+      <h3 class="page-head" style="font-size:18px;margin-top:0" id="vc-anchor">밸류체인 <span style="color:var(--dim);font-size:13px;font-weight:600">· 주도섹터를 누르면 여기로 연결</span></h3>
+      <p class="page-desc">섹터별 업스트림~다운스트림 구조와 국내(코스피)·해외 대표기업. 국내 기업의 현재
+        시그널(관망 제외)이 뱃지로 표시되며, 누르면 시그널 차트로 이동합니다. (큐레이션 스냅샷 · 추천 아님)</p>
+      <div id="vc-cycle-banner" style="margin-bottom:10px"></div>
+      <div class="vc-sectors" id="vc-sectors"></div>
+      <div id="vc-detail"><div class="placeholder">불러오는 중…</div></div>
+    </div>
 
-    <h3 class="page-head" style="font-size:18px;margin-top:28px">📚 지표·용어 학습
-      <span style="color:var(--dim);font-size:13px;font-weight:600">· 무엇을 보고 판단하는지 쉽게</span></h3>
-    <p class="page-desc">시그널·투자에서 쓰는 개념을 초보도 이해되게 정리했습니다. 각 항목에 <b>쉬운 설명 · 왜 보는지 ·
-      우리 시그널에서 어떻게 쓰는지</b>를 담았어요.</p>
-    <div id="glossary"><div class="placeholder">불러오는 중…</div></div>
+    <div id="cycle-seg-learn" style="display:none">
+      <h3 class="page-head" style="font-size:18px;margin-top:0">📚 지표·용어 학습
+        <span style="color:var(--dim);font-size:13px;font-weight:600">· 무엇을 보고 판단하는지 쉽게</span></h3>
+      <p class="page-desc">시그널·투자에서 쓰는 개념을 초보도 이해되게 정리했습니다. 각 항목에 <b>쉬운 설명 · 왜 보는지 ·
+        우리 시그널에서 어떻게 쓰는지</b>를 담았어요.</p>
+      <div id="glossary"><div class="placeholder">불러오는 중…</div></div>
+    </div>
 
-    <h3 class="page-head" style="font-size:18px;margin-top:28px">🏛️ 거장의 포트폴리오
-      <span style="color:var(--dim);font-size:13px;font-weight:600">· 벤치마크 참고용</span></h3>
-    <p class="page-desc">유명 투자자들이 공개한 보유내역(미국 SEC 13F)입니다. <b>분기 공시 스냅샷이며 최대 45일 지연</b>,
-      미국 롱 포지션만 표시됩니다(현금·채권·해외주식 제외) · 추천 아님.</p>
-    <div id="gurus-grid" class="placeholder" style="padding:16px 0">불러오는 중…</div>
+    <div id="cycle-seg-guru" style="display:none">
+      <h3 class="page-head" style="font-size:18px;margin-top:0">🏛️ 거장의 포트폴리오
+        <span style="color:var(--dim);font-size:13px;font-weight:600">· 벤치마크 참고용</span></h3>
+      <p class="page-desc">유명 투자자들이 공개한 보유내역(미국 SEC 13F)입니다. <b>분기 공시 스냅샷이며 최대 45일 지연</b>,
+        미국 롱 포지션만 표시됩니다(현금·채권·해외주식 제외) · 추천 아님.</p>
+      <div id="gurus-grid" class="placeholder" style="padding:16px 0">불러오는 중…</div>
+    </div>
   </div>
 
   <div id="view-trading" class="view-app" style="display:none">
@@ -979,6 +986,24 @@
   </div>
 </dialog>
 
+<dialog id="helpDlg">
+  <div style="width:520px;max-width:90vw">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px">
+      <b style="font-size:15px">시그널 계산 기준</b>
+      <span class="btn" onclick="document.getElementById('helpDlg').close()" style="cursor:pointer">닫기</span>
+    </div>
+    <div style="line-height:1.75;font-size:13px;color:var(--txt)">
+      <b>종합점수(−3 ~ +3)로 5단계 판정</b><br>
+      강력매수 ≥ <b>+2.0</b> · 매수 ≥ <b>+1.2</b> · <b>관망 −1.2 ~ +1.2</b> · 매도 ≤ <b>−1.2</b> · 강력매도 ≤ <b>−2.0</b><br>
+      <b>팩터 가중</b>: 기술 35 · 재무 30 · 저평가 15 · 낙폭과대 20 · 수급 20 · 퀄리티 15 · 모멘텀 20
+      <span style="color:var(--dim-2)">(데이터 있는 팩터끼리 재정규화 · + KB 악재 veto · 하락추세 게이트)</span><br>
+      <span style="color:var(--sell)">※ 약세·조정 국면이면 매수 기준이 자동 상향돼, 점수가 +1.2를 넘어도 관망일 수 있습니다.</span>
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);color:var(--dim);font-size:12px">
+        📖 각 지표의 뜻·왜 보는지는 <b>인사이트 › 학습</b> 탭에서 볼 수 있어요.</div>
+    </div>
+  </div>
+</dialog>
+
 <script>
 const _ROUTES = ['signal','trading','cycle','admin','mypage'];
 let _isAdmin = false;
@@ -989,13 +1014,14 @@ function switchTab(t){
   if (t === 'admin' && !_isAdmin) t = 'signal';  // 관리자만 접근
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   _ROUTES.forEach(v => { const el = document.getElementById('view-' + v); if (el) el.style.display = (v === t) ? '' : 'none'; });
-  document.getElementById('subnav-trading').style.display = (t === 'trading') ? '' : 'none';  // 포트폴리오 서브내비
+  document.getElementById('subnav-trading').style.display = (t === 'trading') ? '' : 'none';  // 내 자산 서브내비
+  document.getElementById('subnav-cycle').style.display = (t === 'cycle') ? '' : 'none';       // 인사이트 서브내비
   const onSignal = (t === 'signal');  // 시황 전광판·코멘터리는 시그널 탭에서만
   document.getElementById('market-ribbon').style.display = onSignal ? '' : 'none';
   const _md = document.getElementById('macro-detail');
   if (onSignal) applyMacroState(); else if (_md) _md.style.display = 'none';  // 접이식 상태 복원/숨김
   if (t === 'signal') loadSignals();
-  if (t === 'cycle') { loadCycle(); loadValuechain(); loadGlossary(); loadGurus(); }  // 사이클 + 밸류체인 + 학습 + 거장 13F
+  if (t === 'cycle') switchCycleSeg(_cycleSeg);   // 인사이트: 사이클/밸류체인/학습/거장 서브탭
   if (t === 'trading') switchTradingSeg(_tradingSeg);
   if (t === 'admin') switchAdminSeg(_adminSeg);
   if (t === 'mypage') fillMyPage();
@@ -1059,9 +1085,12 @@ const _GLOSSARY = [
 // ===== 탭 간 이동(사이클 → 밸류체인 → 시그널) =====
 const INDEX_TICKER = 'KOSPI200X';  // 시그널 탭 최상단 고정 지수(근사)
 let _pendingSignalTicker = null, _vcData = null, _vcCurrent = null, _vcCycle = null;
-function gotoValuechain(key){  // 같은 '산업 사이클' 탭 내 밸류체인 섹션으로 이동
-  _vcCurrent = key; selectVcSector(key);
-  document.getElementById('vc-anchor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+async function gotoValuechain(key){  // 인사이트 탭 내 '밸류체인' 서브탭으로 이동 + 해당 섹터 선택
+  _vcCurrent = key;
+  switchCycleSeg('vc');
+  await loadValuechain();          // 데이터 보장(최초 1회 fetch, 이후 캐시)
+  selectVcSector(key);
+  const a = document.getElementById('vc-anchor'); if (a) a.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function gotoSignal(ticker, market){  // market: 'kr'|'us' — 시그널 탭 시장 전환 후 해당 종목 선택
   _pendingSignalTicker = ticker;
@@ -1268,6 +1297,7 @@ function toggleMacro(){
   localStorage.setItem('macroOpen', localStorage.getItem('macroOpen') === '1' ? '0' : '1');
   applyMacroState();
 }
+function openHelp(){ document.getElementById('helpDlg').showModal(); }
 
 async function loadRegime(){
   const pill = document.getElementById('regime-pill');
@@ -1422,10 +1452,9 @@ async function loadSignals(){
   const isUS = _sigMarket === 'us';
   const seq = ++_sigLoadSeq;  // 시장 전환 레이스 방지 — 최신 요청만 렌더
   try {
-    const [d, fav, mkt, bt] = await Promise.all([
+    const [d, fav, bt] = await Promise.all([
       (await fetch('/api/signals?market=' + _sigMarket)).json(),
       (await fetch('/api/favorites')).json(),
-      isUS ? { ready: false } : (await fetch('/api/market/chart')).json().catch(() => ({ ready: false })),
       isUS ? { ready: false } : (await fetch('/api/backtest')).json().catch(() => ({ ready: false })),
     ]);
     if (seq !== _sigLoadSeq) return;  // 더 최신 로드가 시작됨 → 이 응답은 폐기
@@ -1436,23 +1465,12 @@ async function loadSignals(){
     if (!d.items.length) { el.textContent = '시그널 데이터가 없습니다.'; return; }
     _signalItems = Object.fromEntries(d.items.map(r => [r.ticker, r]));
     _signalRows = d.items;  // API 순서 = 점수 내림차순(시그널순 기본값)
-    // 최상단 고정: 코스피200 근사 지수(항상 첫 행, 검색/정렬 무관하게 고정)
-    _indexReady = mkt.ready;
-    if (mkt.ready) {
-      _signalItems[INDEX_TICKER] = {
-        ticker: INDEX_TICKER, name: mkt.name, sector: '지수', kind: mkt.kind,
-        score: mkt.score, confidence: mkt.confidence, intro: null,
-        narrative: '코스피200 근사 지수(유니버스 동일가중) · 기술 신호: '
-          + (mkt.reasons && mkt.reasons.length ? mkt.reasons.map(r => r.replace(/^\[[^\]]+\]\s*/, '')).join(', ') : '뚜렷한 신호 없음'),
-      };
-    }
     el.className = '';
     populateScreenSectors();
     renderScreenPresets();
     renderSignalList();
-    // 기본 선택: 밸류체인에서 넘어온 종목 > 코스피 지수(고정 최상단) > 1위 종목
-    const target = (_pendingSignalTicker && _signalItems[_pendingSignalTicker]) ? _pendingSignalTicker
-      : (mkt.ready ? INDEX_TICKER : d.items[0].ticker);
+    // 기본 선택: 밸류체인에서 넘어온 종목 > 1위 종목
+    const target = (_pendingSignalTicker && _signalItems[_pendingSignalTicker]) ? _pendingSignalTicker : d.items[0].ticker;
     _pendingSignalTicker = null;
     selectSignalRow(target);
   } catch (e) {
@@ -1606,13 +1624,6 @@ function renderSignalList(){
     : sort === 'volume' ? '평균 ' + fmtVol(r.vol_avg)
     : (r.score > 0 ? '+' : '') + fmtNum(r.score, 2);
   const star = (t) => `<span class="fav-star${_favorites.has(t) ? ' on' : ''}" data-fav="${esc(t)}" title="관심종목">${_favorites.has(t) ? '★' : '☆'}</span>`;
-  const mkt = _indexReady ? _signalItems[INDEX_TICKER] : null;
-  const indexRow = (mkt && !q && !screenActive(scr)) ? `<tr class="clickable-row idx-row" data-ticker="${INDEX_TICKER}">
-      <td>📌</td>
-      <td><b>${esc(mkt.name)}</b><div class="sig-metric">시장 지수</div></td>
-      <td style="font-size:12px;color:var(--dim)">지수</td>
-      <td><span class="sig-pill ${mkt.kind}">${kindLabel(mkt.kind)}</span></td>
-    </tr>` : '';
   const badges = (r) => (r.opp_tags || []).map(t =>
     `<span class="opp-badge">${t}</span>`).join('');
   const body = rows.map(r => `<tr class="clickable-row" data-ticker="${esc(r.ticker)}">
@@ -1621,10 +1632,10 @@ function renderSignalList(){
       <td style="font-size:12px;color:var(--dim)">${r.sector ? esc(r.sector) : '–'}${badges(r)}</td>
       <td><span class="sig-pill ${r.kind}">${kindLabel(r.kind)}</span></td>
     </tr>`).join('');
-  el.innerHTML = rows.length || indexRow
+  el.innerHTML = rows.length
     ? `<table class="dtable"><thead><tr><th></th><th>종목</th><th>섹터</th><th>시그널</th></tr></thead>
-       <tbody>${indexRow}${body}</tbody></table>`
-    : `<div class="placeholder" style="padding:24px 12px">"${esc(q)}" 검색 결과 없음</div>`;
+       <tbody>${body}</tbody></table>`
+    : `<div class="placeholder" style="padding:24px 12px">${q ? '"' + esc(q) + '" 검색 결과 없음' : '조건에 맞는 종목이 없습니다'}</div>`;
   el.querySelectorAll('tr.clickable-row').forEach(tr => {
     tr.addEventListener('click', () => selectSignalRow(tr.dataset.ticker));
     tr.classList.toggle('selected-row', tr.dataset.ticker === _selectedTicker);
@@ -2349,6 +2360,18 @@ async function setStyle(style){
 }
 
 // ===== 트레이딩 세그먼트(자동봇 / 리밸런싱) =====
+// 인사이트 서브탭 — 사이클/밸류체인/학습/거장 하나씩(내 자산 서브내비와 동일 패턴)
+let _cycleSeg = 'cycle';
+function switchCycleSeg(seg){
+  _cycleSeg = seg;
+  document.querySelectorAll('#subnav-cycle .subtab').forEach(b => b.classList.toggle('on', b.dataset.cseg === seg));
+  ['cycle', 'vc', 'learn', 'guru'].forEach(s => { const el = document.getElementById('cycle-seg-' + s); if (el) el.style.display = s === seg ? '' : 'none'; });
+  if (seg === 'cycle') loadCycle();
+  else if (seg === 'vc') loadValuechain();
+  else if (seg === 'learn') loadGlossary();
+  else if (seg === 'guru') loadGurus();
+}
+
 let _tradingSeg = 'bot';
 function switchTradingSeg(seg){
   _tradingSeg = seg;
