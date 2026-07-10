@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from signal_desk import auth, bot, chat, config, db, kb, kb_search, notify, shortform, signalcfg, store, strategy
 from signal_desk.reference import (cycle, etfs as etfs_ref, glossary, guru_screens, gurus as gurus_ref,
                                     sectors, us_ko, valuechain)
-from signal_desk.signals import macro, narrative, opportunity, rebalance, regime, scenario, target, valuation
+from signal_desk.signals import accuracy, macro, narrative, opportunity, rebalance, regime, scenario, target, valuation
 from signal_desk.signals.engine import (
     SignalConfig, _price_only_components, backtest_summary, combine,
     compute_indicator_series, evaluate, factor_contribution, signal_zones, walk_forward,
@@ -684,6 +684,18 @@ def backtest_analysis_get():
     if not store.is_ready():
         return {"ready": False}
     return {"ready": True, **_backtest_analysis()}
+
+
+@app.get("/api/accuracy")
+def accuracy_get():
+    """실측 성과(track record) — 매일 저장된 실제 시그널(전 팩터·전 게이트)을 이후 실현 수익률과
+    조인해 티어별 적중률·매수 정밀도·팩터 IC를 낸다. 백테스트(시뮬레이션)와 달리 '진짜 낸 신호'의
+    성적이라 신뢰구축용. 스냅샷 도입일부터 누적되므로 초기 표본은 작다."""
+    df = store.load_signal_history()
+    if df.empty:
+        return {"ready": False, "reason": "아직 저장된 시그널 이력이 없습니다(매일 마감 후 누적)."}
+    rows = df.to_dict("records")
+    return {"ready": True, **accuracy.realized_accuracy(rows, store.load_all_dated_closes())}
 
 
 @app.get("/api/signals/{ticker}/chart")
