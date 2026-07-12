@@ -615,6 +615,7 @@ def signals_get(market: str = "kospi"):
     fundamentals = store.load_fundamentals()
     med_per = target.median_per(fundamentals)   # 목표가(밸류 정상화) 기준 — 루프 밖 1회
     price_series = store.load_price_series()      # 기술적 저항 산정용
+    consensus = store.load_consensus_latest()     # 목표가 v2 앵커(선행EPS·애널 목표주가, KR)
     for r in _signals():
         d = asdict(r)
         q = quotes.get(r.ticker) or {}
@@ -638,7 +639,9 @@ def signals_get(market: str = "kospi"):
         dg = db.kb_digest_get(r.ticker)  # KB 정성 다이제스트(뉴스·영상 가공)
         d["kb"] = {"sentiment": dg["sentiment"], "summary": dg["summary"], "points": dg["points"]} if dg else None
         d["opp_tags"] = opportunity.classify(r)  # 기회 유형(#14)
-        d["target"] = target.compute(d["price"], f.get("per"), med_per, price_series.get(r.ticker))  # 참고 목표가
+        c = consensus.get(r.ticker) or {}
+        d["target"] = target.compute(d["price"], f.get("per"), med_per, price_series.get(r.ticker),
+                                     analyst_target=c.get("price_target_mean"), fwd_eps=c.get("fwd1_eps"))  # 참고 목표가(v2 앵커 포함)
         items.append(d)
     return {"ready": True, "items": items}
 
@@ -1599,9 +1602,12 @@ def _chat_signal_summary(ticker: str) -> dict | None:
         return None
     q = _quotes().get(ticker) or {}
     f = store.load_fundamentals().get(ticker) or {}
+    c = store.load_consensus_latest().get(ticker) or {}
     tg = target.compute(q.get("price"), f.get("per"), target.median_per(store.load_fundamentals()),
-                        store.load_price_series().get(ticker))
-    ups = [v for v in [(tg or {}).get("value_upside_pct"), (tg or {}).get("resistance_upside_pct")]
+                        store.load_price_series().get(ticker),
+                        analyst_target=c.get("price_target_mean"), fwd_eps=c.get("fwd1_eps"))
+    ups = [v for v in [(tg or {}).get("value_upside_pct"), (tg or {}).get("fwd_value_upside_pct"),
+                       (tg or {}).get("analyst_upside_pct"), (tg or {}).get("resistance_upside_pct")]
            if isinstance(v, (int, float)) and v > 0]
     dg = db.kb_digest_get(ticker)
     return {"종목": sig.name, "코드": ticker, "섹터": sectors.sector_of(ticker),

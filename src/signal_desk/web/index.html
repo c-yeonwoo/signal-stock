@@ -1923,7 +1923,8 @@ function heroReason(item){
 // 히어로에 보여줄 대표 상승여력 — 목표가(밸류/저항) 중 양(+)의 최대치
 function bestUpside(item){
   const t = item && item.target; if (!t) return null;
-  const vals = [t.value_upside_pct, t.resistance_upside_pct].filter(v => typeof v === 'number' && v > 0);
+  const vals = [t.value_upside_pct, t.fwd_value_upside_pct, t.analyst_upside_pct, t.resistance_upside_pct]
+    .filter(v => typeof v === 'number' && v > 0);
   return vals.length ? Math.max(...vals) : null;
 }
 
@@ -1988,18 +1989,18 @@ async function showSignalChart(ticker, item){
   } else btEl.style.display = 'none';
   const tgEl = document.getElementById('signal-target');
   const tg = item && item.target;
-  if (tg && (tg.value_target != null || tg.resistance != null)) {
+  if (tg && (tg.value_target != null || tg.fwd_value_target != null || tg.analyst_target != null || tg.resistance != null)) {
     const isUS = _sigMarket === 'us';
     const px = v => isUS ? '$' + fmtNum(v, 2) : fmtNum(v, 0) + '원';
+    const anchor = (label, val, up) => {
+      const c = up > 0 ? 'var(--sig-buy)' : up < 0 ? 'var(--sig-sell)' : 'var(--dim)';
+      return `${label} <b>${px(val)}</b> <span style="color:${c}">(${up > 0 ? '+' : ''}${fmtNum(up, 1)}%)</span>`;
+    };
     const parts = [];
-    if (tg.value_target != null) {
-      const up = tg.value_upside_pct, c = up > 0 ? 'var(--sig-buy)' : up < 0 ? 'var(--sig-sell)' : 'var(--dim)';
-      parts.push(`밸류 정상화 <b>${px(tg.value_target)}</b> <span style="color:${c}">(${up > 0 ? '+' : ''}${fmtNum(up, 1)}%)</span>`);
-    }
-    if (tg.resistance != null) {
-      const up = tg.resistance_upside_pct, c = up > 0 ? 'var(--sig-buy)' : 'var(--dim)';
-      parts.push(`기술적 저항 <b>${px(tg.resistance)}</b> <span style="color:${c}">(${up > 0 ? '+' : ''}${fmtNum(up, 1)}%)</span>`);
-    }
+    if (tg.analyst_target != null) parts.push(anchor('애널 컨센서스', tg.analyst_target, tg.analyst_upside_pct));
+    if (tg.fwd_value_target != null) parts.push(anchor('선행EPS 밸류', tg.fwd_value_target, tg.fwd_value_upside_pct));
+    if (tg.value_target != null) parts.push(anchor('후행 밸류', tg.value_target, tg.value_upside_pct));
+    if (tg.resistance != null) parts.push(anchor('기술적 저항', tg.resistance, tg.resistance_upside_pct));
     tgEl.style.display = '';
     tgEl.innerHTML = `<span style="color:var(--dim)">참고 목표가</span> ${parts.join(' · ')}`
       + ` <span style="color:var(--dim-2);font-size:11px">· 추정·참고일 뿐 보장 아님(${esc((tg.basis || []).join(', '))})</span>`;
