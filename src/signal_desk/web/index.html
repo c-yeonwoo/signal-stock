@@ -139,6 +139,11 @@
   .detail-tab:hover { color:var(--txt); }
   .detail-tab.on { color:var(--accent); border-bottom-color:var(--accent); }
   .detail-panels { margin-top:8px; min-height:210px; }  /* 탭 전환 시 카드·차트 높이 튐 방지 */
+  .sig-quickfilters { display:flex; gap:6px; padding:0 10px 8px; flex-wrap:wrap; }
+  .qchip { border:1px solid var(--line); background:var(--panel); color:var(--dim); border-radius:999px;
+    padding:3px 11px; font-size:12px; cursor:pointer; line-height:1.4; }
+  .qchip:hover { color:var(--txt); border-color:var(--line-strong); }
+  .qchip.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
   /* 상세 패널은 자체 스크롤 없이 그대로 늘어남 → 차트 카드(.sig-chart-pane)만 스크롤.
      총 스크롤 = 브라우저 스크롤 + 차트 카드 스크롤 2개만. */
   /* 히어로 결론 카드 — 시그널 색으로 좌측 강조, 결론·이유·핵심지표 */
@@ -443,6 +448,10 @@
             <option value="mktcap">시총순</option>
             <option value="volume">거래량순</option>
           </select>
+        </div>
+        <div class="sig-quickfilters">
+          <button type="button" id="qf-favonly" class="qchip" onclick="quickFilter('screen-favonly', this)">★ 관심종목만</button>
+          <button type="button" id="qf-buyonly" class="qchip" onclick="quickFilter('screen-buyonly', this)">매수 시그널만</button>
         </div>
         <details id="sig-screener" style="margin:0 10px 8px">
           <summary style="cursor:pointer;color:var(--accent);font-weight:600;font-size:13px">🔎 필터·스크리너 <span id="screen-count" style="color:var(--dim);font-weight:400"></span></summary>
@@ -1425,11 +1434,11 @@ async function loadScorecard(){
     const wr = d.win_rate, wc = wr >= 55 ? 'var(--sig-buy)' : wr < 45 ? 'var(--sig-sell)' : 'var(--txt)';
     const av = d.avg_outcome_pct, ac = av > 0 ? 'var(--sig-buy)' : av < 0 ? 'var(--sig-sell)' : 'var(--txt)';
     el.style.display = '';
-    el.innerHTML = `📊 <b>실현 시그널 성적표</b> — 매수 판단 <b>${d.resolved}건</b> 실현`
+    el.innerHTML = `🤖 <b>봇 매매 성적</b> <span style="color:var(--dim-2)">(자동매매 실제 체결)</span> — <b>${d.resolved}건</b> 실현`
       + ` · 승률 <b style="color:${wc}">${fmtNum(wr, 1)}%</b>`
-      + ` · 평균 실현 <b style="color:${ac}">${av > 0 ? '+' : ''}${fmtNum(av, 2)}%</b>(3일)`
+      + ` · 평균 <b style="color:${ac}">${av > 0 ? '+' : ''}${fmtNum(av, 2)}%</b>(3일)`
       + (d.pending ? ` <span style="color:var(--dim)">· 미실현 ${d.pending}건</span>` : '')
-      + ` <span style="color:var(--dim-2);font-size:11px">· 백테스트(가상)와 달리 봇의 실제 결정 사후검증</span>`;
+      + ` <span style="color:var(--dim-2);font-size:11px">· 봇이 실제로 사고판 결과(시뮬레이션·시그널 정확도와 별개)</span>`;
   } catch (e) { el.style.display = 'none'; }
 }
 
@@ -1686,6 +1695,15 @@ function deleteScreenPreset(i){
 }
 
 // 검색어 필터 + 선택 기준 정렬로 종목 리스트를 그린다(지수 행은 항상 최상단 고정).
+function quickFilter(cbId, btn){
+  const cb = document.getElementById(cbId); if (!cb) return;
+  cb.checked = !cb.checked;
+  renderSignalList();  // 칩 활성표시는 _syncQuickChips가 처리
+}
+function _syncQuickChips(scr){  // 스크리너 체크박스 ↔ 상단 퀵칩 상태 동기화
+  const fav = document.getElementById('qf-favonly'); if (fav) fav.classList.toggle('on', !!scr.favOnly);
+  const buy = document.getElementById('qf-buyonly'); if (buy) buy.classList.toggle('on', !!scr.buyOnly);
+}
 function renderSignalList(){
   const el = document.getElementById('signal-body');
   if (!_signalRows) return;
@@ -1693,6 +1711,7 @@ function renderSignalList(){
   const q = (document.getElementById('sig-search').value || '').trim().toLowerCase();
   const sort = document.getElementById('sig-sort').value;
   const scr = readScreen();
+  _syncQuickChips(scr);
   let rows = _signalRows.filter(r =>
     (!q || r.name.toLowerCase().includes(q) || r.ticker.toLowerCase().includes(q))
     && (!_oppFilter || (r.opp_tags || []).includes(_oppFilter))
@@ -1995,26 +2014,32 @@ async function showSignalChart(ticker, item){
   if (bt && bt.n) {
     const wr = bt.winrate, wrColor = wr >= 55 ? 'var(--sig-buy)' : wr < 45 ? 'var(--sig-sell)' : 'var(--dim)';
     btEl.style.display = '';
-    btEl.innerHTML = `과거 <b>${kindLabel(item.kind)}</b> 시그널 적중률 <b style="color:${wrColor}">${fmtNum(wr, 1)}%</b>`
-      + `${bt.avg_ret_5d != null ? ` · 5일 평균 ${bt.avg_ret_5d > 0 ? '+' : ''}${fmtNum(bt.avg_ret_5d, 2)}%` : ''} <span style="color:var(--dim-2)">(표본 ${bt.n}, 가격기반 백테스트)</span>`;
+    btEl.innerHTML = `🧪 <span style="color:var(--dim)">시뮬레이션</span> ${kindLabel(item.kind)} 적중률 <b style="color:${wrColor}">${fmtNum(wr, 1)}%</b>`
+      + `${bt.avg_ret_5d != null ? ` · 5일 평균 ${bt.avg_ret_5d > 0 ? '+' : ''}${fmtNum(bt.avg_ret_5d, 2)}%` : ''} <span style="color:var(--dim-2)">(가격기반 백테스트 ${bt.n}건 · 참고용, 실측 아님)</span>`;
   } else btEl.style.display = 'none';
   const tgEl = document.getElementById('signal-target');
   const tg = item && item.target;
   if (tg && (tg.value_target != null || tg.fwd_value_target != null || tg.analyst_target != null || tg.resistance != null)) {
     const isUS = _sigMarket === 'us';
     const px = v => isUS ? '$' + fmtNum(v, 2) : fmtNum(v, 0) + '원';
-    const anchor = (label, val, up) => {
-      const c = up > 0 ? 'var(--sig-buy)' : up < 0 ? 'var(--sig-sell)' : 'var(--dim)';
-      return `${label} <b>${px(val)}</b> <span style="color:${c}">(${up > 0 ? '+' : ''}${fmtNum(up, 1)}%)</span>`;
+    // 대표 앵커 1개를 헤드라인으로(우선순위: 애널>선행EPS>후행밸류), 나머지는 접어서 밀도↓
+    const A = [];
+    if (tg.analyst_target != null) A.push(['애널 컨센서스', tg.analyst_target, tg.analyst_upside_pct]);
+    if (tg.fwd_value_target != null) A.push(['선행EPS 밸류', tg.fwd_value_target, tg.fwd_value_upside_pct]);
+    if (tg.value_target != null) A.push(['후행 밸류', tg.value_target, tg.value_upside_pct]);
+    if (tg.resistance != null) A.push(['기술적 저항', tg.resistance, tg.resistance_upside_pct]);
+    const one = (a, big) => {
+      const up = a[2], c = up > 0 ? 'var(--sig-buy)' : up < 0 ? 'var(--sig-sell)' : 'var(--dim)';
+      const v = `<b>${px(a[1])}</b> <span style="color:${c}">(${up > 0 ? '+' : ''}${fmtNum(up, 1)}%)</span>`;
+      return big ? `${a[0]} ${v}` : `<span style="color:var(--dim)">${a[0]}</span> ${v}`;
     };
-    const parts = [];
-    if (tg.analyst_target != null) parts.push(anchor('애널 컨센서스', tg.analyst_target, tg.analyst_upside_pct));
-    if (tg.fwd_value_target != null) parts.push(anchor('선행EPS 밸류', tg.fwd_value_target, tg.fwd_value_upside_pct));
-    if (tg.value_target != null) parts.push(anchor('후행 밸류', tg.value_target, tg.value_upside_pct));
-    if (tg.resistance != null) parts.push(anchor('기술적 저항', tg.resistance, tg.resistance_upside_pct));
+    const head = A[0], rest = A.slice(1);
     tgEl.style.display = '';
-    tgEl.innerHTML = `<span style="color:var(--dim)">참고 목표가</span> ${parts.join(' · ')}`
-      + ` <span style="color:var(--dim-2);font-size:11px">· 추정·참고일 뿐 보장 아님(${esc((tg.basis || []).join(', '))})</span>`;
+    tgEl.innerHTML = `<span style="color:var(--dim)">참고 목표가</span> ${one(head, true)}`
+      + (rest.length ? ` <button class="lnk" onclick="this.nextElementSibling.style.display='';this.remove()"`
+          + ` style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0 2px">다른 기준 ${rest.length}개 ▾</button>`
+          + `<span style="display:none;color:var(--dim-2);font-size:12px"> · ${rest.map(a => one(a, false)).join(' · ')}</span>` : '')
+      + ` <span style="color:var(--dim-2);font-size:11px;display:block;margin-top:2px">추정·참고일 뿐 보장 아님 (${esc((tg.basis || []).join(', '))})</span>`;
   } else tgEl.style.display = 'none';
   setDetailHas('signal-metrics', !!(item && item.price != null));  // 지표 탭: 시세/재무 있는 종목만(지수 제외)
   const narrEl = document.getElementById('signal-narrative');
