@@ -869,7 +869,12 @@ def _refresh_kr(data: dict) -> dict:
     """국내 유니버스+시세+재무(+PER/PBR·퀄리티·배당). DART 재무는 분기(≈80일)마다만 재수집하고
     (연간 데이터라 거의 불변), 그 외엔 시총만 다시 받아 매일 재계산. force_dart=true면 강제."""
     universe = store.fetch_universe()
-    store.fetch_prices(universe)
+    # 최초 1회는 5년 전량 백필(deep), 이후엔 증분. 관리자 '데이터 갱신' 버튼만 눌러도 처음엔 5년치를
+    # 채우고(수 분 소요) 그다음부터는 마지막 저장일부터만 가볍게 갱신. full_prices=true면 강제 재백필.
+    deep = bool(data.get("full_prices")) or not db.kv_get("prices_deep_backfilled")
+    store.fetch_prices(universe, full=deep)
+    if deep:
+        db.kv_set("prices_deep_backfilled", _kst_today())
     if bool(data.get("force_dart")) or _dart_stale():
         fundamentals = store.fetch_fundamentals(universe)      # DART 재무 + PER/PBR (분기 1회)
         store.fetch_fundamentals_history(universe)             # point-in-time 백테스트용 연도별 재무
