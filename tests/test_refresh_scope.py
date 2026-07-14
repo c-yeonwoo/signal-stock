@@ -51,25 +51,42 @@ def test_unknown_scope_rejected(monkeypatch):
     assert out["ok"] is False and "bogus" in out["reason"]
 
 
-def _stub_kr(monkeypatch, profiles, calls):
+def _stub_kr(monkeypatch, profiles, calls, deep_done=True):
+    kv = {"prices_deep_backfilled": "2026-07-01"} if deep_done else {}
     monkeypatch.setattr(api.store, "fetch_universe", lambda: [{"ticker": "005930", "name": "삼성전자"}])
-    monkeypatch.setattr(api.store, "fetch_prices", lambda u: None)
+    monkeypatch.setattr(api.store, "fetch_prices", lambda u, full=False: calls.append(("prices_full", full)))
     monkeypatch.setattr(api, "_dart_stale", lambda: False)          # DART 최신 → 재무 블록 스킵
     monkeypatch.setattr(api.store, "update_valuation", lambda: None)
     monkeypatch.setattr(api.store, "load_fundamentals", lambda: {"005930": {}})
     monkeypatch.setattr(api.store, "load_company_profiles", lambda: profiles)
     monkeypatch.setattr(api.store, "fetch_company_profiles", lambda u: calls.append("cp"))
+    monkeypatch.setattr(api.db, "kv_get", lambda k: kv.get(k))
+    monkeypatch.setattr(api.db, "kv_set", lambda k, v: kv.__setitem__(k, v))
+    return kv
 
 
 def test_refresh_kr_backfills_company_profiles_when_empty(monkeypatch):
     calls = []
     _stub_kr(monkeypatch, {}, calls)                                # 기업개황 비어 있음
     api._refresh_kr({})
-    assert calls == ["cp"]     # date-gate로 재무 블록 스킵돼도 기업개황은 백필
+    assert "cp" in calls       # date-gate로 재무 블록 스킵돼도 기업개황은 백필
 
 
 def test_refresh_kr_skips_company_backfill_when_present(monkeypatch):
     calls = []
     _stub_kr(monkeypatch, {"005930": {"ceo": "x"}}, calls)          # 이미 수집됨
     api._refresh_kr({})
-    assert calls == []         # 있으면 재백필 안 함(정적 데이터)
+    assert "cp" not in calls   # 있으면 재백필 안 함(정적 데이터)
+
+
+def test_refresh_kr_deep_backfill_first_then_incremental(monkeypatch):
+    # 최초(플래그 없음) → 5년 전량(full=True) + 플래그 세팅. 이후(플래그 있음) → 증분(full=False)
+    calls = []
+    kv = _stub_kr(monkeypatch, {"005930": {}}, calls, deep_done=False)
+    api._refresh_kr({})
+    assert ("prices_full", True) in calls and kv.get("prices_deep_backfilled")
+
+    calls2 = []
+    _stub_kr(monkeypatch, {"005930": {}}, calls2, deep_done=True)
+    api._refresh_kr({})
+    assert ("prices_full", False) in calls2   # 백필 완료 후엔 증분
