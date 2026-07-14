@@ -59,6 +59,38 @@ def test_prune_preserves_curated_uploads(tmp_path, monkeypatch):
     assert cnt == 40 and out["news_deleted"] == 0
 
 
+def _insight(n, fetched_days_ago=0, ticker="_MARKET"):
+    now = int(time.time())
+    c = db.conn()
+    for i in range(n):
+        c.execute("INSERT INTO kb_entries(ticker,title,summary,url,source,published,fetched,doc_class,status) "
+                  "VALUES(?,?,?,?,?,?,?,?,?)",
+                  (ticker, f"i{i}", "s", f"http://ins/{i}", "insight", "",
+                   now - fetched_days_ago * 86400, "시황", "confirmed"))
+    c.commit()
+    c.close()
+
+
+def test_prune_caps_insight(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB", tmp_path / "app.db")
+    _insight(80)                                  # 최신 80건(시황·거시 무한 누적)
+    out = db.kb_prune(insight_keep=60, insight_ttl_days=180)
+    c = db.conn()
+    (cnt,) = c.execute("SELECT COUNT(*) FROM kb_entries WHERE source='insight'").fetchone()
+    c.close()
+    assert cnt == 60 and out["insight_deleted"] == 20
+
+
+def test_prune_insight_keeps_floor_but_drops_stale(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB", tmp_path / "app.db")
+    _insight(20, fetched_days_ago=300)            # 20건 전부 300일 경과
+    out = db.kb_prune(insight_keep=60, insight_ttl_days=180)
+    c = db.conn()
+    (cnt,) = c.execute("SELECT COUNT(*) FROM kb_entries WHERE source='insight'").fetchone()
+    c.close()
+    assert cnt == 12 and out["insight_deleted"] == 8   # 하한 12 보존, 초과 8건 만료 삭제
+
+
 def test_prune_drops_stale_pending(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB", tmp_path / "app.db")
     now = int(time.time())

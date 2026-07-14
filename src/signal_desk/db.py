@@ -438,12 +438,16 @@ def kb_entry_add_many(ticker: str, items: list[dict]) -> int:
     return added
 
 
-def kb_prune(news_per_ticker: int = 30, news_ttl_days: int = 90, pending_ttl_days: int = 14) -> dict:
-    """KB 저장 정리(무한 누적 방지). 자동 뉴스만 대상 — 큐레이션 업로드/리포트/인사이트는 보존.
+def kb_prune(news_per_ticker: int = 30, news_ttl_days: int = 90, pending_ttl_days: int = 14,
+             insight_keep: int = 60, insight_ttl_days: int = 180) -> dict:
+    """KB 저장 정리(무한 누적 방지). 자동 수집만 대상 — 큐레이션 업로드/리포트는 보존.
     - 뉴스: 종목당 최신 news_per_ticker건 초과 삭제. 단 다이제스트 하한(12건)은 보장하고,
       12건 초과분 중 news_ttl_days 지난 것도 삭제(오래된 뉴스는 시그널에 무의미).
     - pending 문서: pending_ttl_days 지나도 confirmed 안 되면 삭제(다이제스트 미반영·원문만 점유).
-    반환: {news_deleted, pending_deleted}."""
+    - 인사이트(시황·거시, source='insight': 미주은·오건영·유튜브·해외RSS): 거시 다이제스트는 최근
+      12건만 쓰는데 원본(raw_text)이 무한 누적 → 최신 insight_keep건 보장, 12건 초과분 중 insight_ttl_days
+      지난 것 삭제(오래된 시황 논평은 재사용 가치 낮음).
+    반환: {news_deleted, pending_deleted, insight_deleted}."""
     c = conn()
     now = int(time.time())
     placeholders = ",".join("?" * len(KB_NEWS_SOURCES))
@@ -459,9 +463,16 @@ def kb_prune(news_per_ticker: int = 30, news_ttl_days: int = 90, pending_ttl_day
         "DELETE FROM kb_entries WHERE status='pending' AND fetched < ?",
         (now - pending_ttl_days * 86400,),
     ).rowcount
+    insight_del = c.execute(
+        "DELETE FROM kb_entries WHERE source='insight' AND id IN ("
+        "  SELECT id FROM (SELECT id, fetched, ROW_NUMBER() OVER "
+        "    (PARTITION BY ticker ORDER BY id DESC) rn FROM kb_entries WHERE source='insight') "
+        "  WHERE rn > ? OR (rn > 12 AND fetched < ?))",
+        (insight_keep, now - insight_ttl_days * 86400),
+    ).rowcount
     c.commit()
     c.close()
-    return {"news_deleted": news_del, "pending_deleted": pend_del}
+    return {"news_deleted": news_del, "pending_deleted": pend_del, "insight_deleted": insight_del}
 
 
 def kb_document_add(ticker: str, title: str, summary: str, url: str, source: str,
