@@ -122,3 +122,4 @@ def test_signal_chart_with_data(tmp_path, monkeypatch):
     assert len(d["ma20"]) == len(history)
     assert len(d["rsi"]) == len(history)
     assert "macd" in d and "macd_signal" in d and "macd_hist" in d
+    assert "scores" in d and len(d["scores"]) == len(history)

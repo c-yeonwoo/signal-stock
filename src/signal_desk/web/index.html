@@ -560,7 +560,8 @@
         <div id="signal-hero" style="display:none"></div>
         <div id="signal-chart"></div>
         <div id="signal-legend" style="display:none;font-size:11px;color:var(--dim);margin:4px 0">
-          <span style="color:var(--sig-buy);font-weight:700">● B</span> 매수 · <span style="color:var(--sig-sell);font-weight:700">● S</span> 매도 · <b>+</b>는 강력 · <b>진한 음영</b>=실측 시그널(전 팩터, 저장 이후) · <b>옅은 음영</b>=가격기반 재현(그 이전) · 📍 = 현재 시그널</div>
+          <span style="color:var(--sig-buy);font-weight:700">● B</span> 매수 · <span style="color:var(--sig-sell);font-weight:700">● S</span> 매도 · <b>+</b>는 강력 · <b>진한 음영</b>=실측 시그널 · <b>옅은 음영</b>=가격기반 재현 · 📍=현재 ·
+          <span style="color:#64748b">― 점수</span>=종합점수 추이(참고 · 발동과 별개)</div>
         <div class="detail-tabs" id="detail-tabs" style="display:none"></div>
         <div class="detail-panels" id="detail-panels">
           <div id="signal-narrative" class="detail-panel placeholder" style="display:none;background:var(--accent-weak);
@@ -2268,7 +2269,8 @@ async function showSignalChart(ticker, item){
     const dates = d.dates.slice(s0), close = d.close.slice(s0),
           ma20 = d.ma20.slice(s0), ma60 = d.ma60.slice(s0), ma120 = d.ma120.slice(s0),
           rsi = d.rsi.slice(s0), macd = d.macd.slice(s0),
-          macdSig = d.macd_signal.slice(s0), macdHist = d.macd_hist.slice(s0);
+          macdSig = d.macd_signal.slice(s0), macdHist = d.macd_hist.slice(s0),
+          scores = (d.scores || []).slice(s0);
     const first = dates[0];
     const rawZones = (d.zones || []).filter(z => z.end >= first);
     const zones = rawZones.map(z => ({ kind: z.kind, start: z.start < first ? first : z.start, end: z.end, actual: z.actual }));
@@ -2311,19 +2313,20 @@ async function showSignalChart(ticker, item){
     legEl.querySelector('.leg-actual')?.remove();
     if (d.actual_from)  // 실측 시작일 안내(그 이후 진한 음영)
       legEl.insertAdjacentHTML('beforeend', `<span class="leg-actual"> · <b style="color:var(--txt)">${esc(d.actual_from)}~ 실측</b></span>`);
+    // 패널 간격: 가격을 키우고 MACD↔기간선택 공백 축소(bottom 기준 배치)
     _signalChart.setOption({
       animation: false,
       tooltip: { trigger: 'axis' },
-      legend: { top: 0, data: ['종가', 'MA20', 'MA60', 'MA120'] },
+      legend: { top: 0, data: ['종가', 'MA20', 'MA60', 'MA120', '점수'] },
       axisPointer: { link: [{ xAxisIndex: 'all' }] },
       title: [
-        { text: 'RSI', left: 55, top: '50%', textStyle: { fontSize: 11, fontWeight: 'normal', color: '#94a3b8' } },
-        { text: 'MACD', left: 55, top: '68%', textStyle: { fontSize: 11, fontWeight: 'normal', color: '#94a3b8' } },
+        { text: 'RSI', left: 55, bottom: '27%', textStyle: { fontSize: 11, fontWeight: 'normal', color: '#94a3b8' } },
+        { text: 'MACD', left: 55, bottom: 108, textStyle: { fontSize: 11, fontWeight: 'normal', color: '#94a3b8' } },
       ],
       grid: [
-        { left: 55, right: 20, top: 34, height: '38%' },
-        { left: 55, right: 20, top: '54%', height: '13%' },
-        { left: 55, right: 20, top: '72%', height: '13%' },
+        { left: 55, right: 48, top: 28, bottom: '38%' },           // 종가·MA·점수 — 상단 크게
+        { left: 55, right: 20, height: 72, bottom: '22%' },         // RSI
+        { left: 55, right: 20, height: 72, bottom: 34 },            // MACD — 기간선택 바로 위
       ],
       xAxis: [
         { type: 'category', data: dates, gridIndex: 0, axisLabel: { show: false } },
@@ -2331,12 +2334,15 @@ async function showSignalChart(ticker, item){
         { type: 'category', data: dates, gridIndex: 2, axisLabel: { show: false } },
       ],
       yAxis: [
-        { gridIndex: 0, scale: true },
-        { gridIndex: 1, min: 0, max: 100 },
-        { gridIndex: 2, scale: true },
+        { gridIndex: 0, scale: true, splitNumber: 4 },
+        { gridIndex: 0, scale: true, min: -3, max: 3, splitLine: { show: false },
+          axisLabel: { color: '#94a3b8', fontSize: 10, formatter: v => (v > 0 ? '+' : '') + v },
+          axisLine: { show: false }, axisTick: { show: false } },  // 점수(우측)
+        { gridIndex: 1, min: 0, max: 100, splitNumber: 2 },
+        { gridIndex: 2, scale: true, splitNumber: 2 },
       ],
       dataZoom: [
-        { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 4, height: 20, start: zoomStart, end: 100 },
+        { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 6, height: 20, start: zoomStart, end: 100 },
         { type: 'inside', xAxisIndex: [0, 1, 2], start: zoomStart, end: 100 },
       ],
       series: [
@@ -2345,10 +2351,13 @@ async function showSignalChart(ticker, item){
         { name: 'MA20', type: 'line', data: ma20, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#12a150' } },
         { name: 'MA60', type: 'line', data: ma60, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#e08a00' } },
         { name: 'MA120', type: 'line', data: ma120, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#e5484d' } },
-        { name: 'RSI', type: 'line', data: rsi, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#7c3aed' } },
-        { name: 'MACD 히스토그램', type: 'bar', data: macdHist, xAxisIndex: 2, yAxisIndex: 2 },
-        { name: 'MACD', type: 'line', data: macd, xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, lineStyle: { width: 1 } },
-        { name: 'Signal', type: 'line', data: macdSig, xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, lineStyle: { width: 1 } },
+        { name: '점수', type: 'line', data: scores, xAxisIndex: 0, yAxisIndex: 1, showSymbol: false,
+          lineStyle: { width: 1.5, type: 'dashed', color: '#64748b' },
+          tooltip: { valueFormatter: v => v == null ? '–' : ((v > 0 ? '+' : '') + Number(v).toFixed(2)) } },
+        { name: 'RSI', type: 'line', data: rsi, xAxisIndex: 1, yAxisIndex: 2, showSymbol: false, lineStyle: { color: '#7c3aed' } },
+        { name: 'MACD 히스토그램', type: 'bar', data: macdHist, xAxisIndex: 2, yAxisIndex: 3 },
+        { name: 'MACD', type: 'line', data: macd, xAxisIndex: 2, yAxisIndex: 3, showSymbol: false, lineStyle: { width: 1 } },
+        { name: 'Signal', type: 'line', data: macdSig, xAxisIndex: 2, yAxisIndex: 3, showSymbol: false, lineStyle: { width: 1 } },
       ],
     }, true);
     _signalChart.resize();
