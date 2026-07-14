@@ -29,7 +29,7 @@ from signal_desk.reference import (cycle, etfs as etfs_ref, glossary, guru_scree
 from signal_desk.signals import accuracy, macro, narrative, opportunity, rebalance, regime, regime_zone, relative, scenario, target, valuation
 from signal_desk.signals.engine import (
     SignalConfig, _price_only_components, backtest_summary, combine,
-    compute_indicator_series, evaluate, factor_contribution, signal_zones, walk_forward,
+    compute_indicator_series, daily_signal_scores, evaluate, factor_contribution, signal_zones, walk_forward,
 )
 
 config.load_env()
@@ -815,6 +815,7 @@ def signal_chart_get(ticker: str, market: str = "kospi"):
         "ma120": series["ma_long"],
         "rsi": series["rsi"],
         "zones": signal_zones(dates, closes, stored=stored),
+        "scores": daily_signal_scores(dates, closes, stored=stored),  # 점수 추이(발동≠ · 참고)
         "actual_from": actual_dates[0] if actual_dates else None,  # 이 날짜 이후는 실측(그 전은 재현)
         "macd": series["macd"]["macd"],
         "macd_signal": series["macd"]["signal"],
@@ -839,6 +840,7 @@ def market_chart_get():
         "dates": dates, "close": closes,
         "ma20": series["ma_short"], "ma60": series["ma_mid"], "ma120": series["ma_long"],
         "rsi": series["rsi"], "zones": signal_zones(dates, closes),
+        "scores": daily_signal_scores(dates, closes),
         "macd": series["macd"]["macd"], "macd_signal": series["macd"]["signal"], "macd_hist": series["macd"]["histogram"],
         "kind": combined["kind"], "score": combined["score"], "confidence": combined["confidence"],
         "reasons": combined["reasons"],

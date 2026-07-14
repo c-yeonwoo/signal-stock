@@ -506,6 +506,30 @@ def replay_signal_kinds(closes: list[float], config: SignalConfig | None = None)
     return kinds
 
 
+def daily_signal_scores(
+    dates: list[str], closes: list[float], config: SignalConfig | None = None,
+    stored: dict[str, dict] | None = None,
+) -> list[float | None]:
+    """날짜별 종합점수 시계열(차트 참고용). 실측 스냅샷 우선, 없으면 가격기반 재현.
+    시그널 *발동*(BUY/SELL 전환)과 다른 맥락 — 연속 점수 추이만 보여준다."""
+    config = config or SignalConfig()
+    stored = stored or {}
+    series = compute_indicator_series(closes, config)
+    out: list[float | None] = []
+    for k in range(len(closes)):
+        st = stored.get(dates[k])
+        if st and st.get("score") is not None:
+            try:
+                out.append(float(st["score"]))
+                continue
+            except (TypeError, ValueError):
+                pass
+        combined = combine(_price_only_components(closes, series, k, config), config)
+        _apply_trend_gate(combined, closes, series, k, config)
+        out.append(combined.get("score"))
+    return out
+
+
 def signal_zones(
     dates: list[str], closes: list[float], config: SignalConfig | None = None,
     stored: dict[str, dict] | None = None,
