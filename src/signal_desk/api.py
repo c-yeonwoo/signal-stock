@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from signal_desk import auth, bot, brain, chat, config, db, kb, kb_search, notify, shortform, signalcfg, store, strategy
 from signal_desk.reference import (cycle, etfs as etfs_ref, glossary, guru_screens, gurus as gurus_ref,
                                     quant_methods, sectors, us_ko, valuechain)
-from signal_desk.signals import accuracy, macro, narrative, opportunity, rebalance, regime, regime_zone, scenario, target, valuation
+from signal_desk.signals import accuracy, macro, narrative, opportunity, rebalance, regime, regime_zone, relative, scenario, target, valuation
 from signal_desk.signals.engine import (
     SignalConfig, _price_only_components, backtest_summary, combine,
     compute_indicator_series, evaluate, factor_contribution, signal_zones, walk_forward,
@@ -699,6 +699,16 @@ def regime_zone_get():
         return {"ready": False}
     idx = [d["close"] for d in store.load_index_history()]
     return regime_zone.assess(store.load_price_series(), index_closes=idx, macro_result=_macro())
+
+
+@app.get("/api/relative-strength")
+def relative_strength_get():
+    """상대강도 리더보드 — 시장(동일가중 지수) 대비 선방 종목 감시 렌즈(매수 신호 아님)."""
+    if not store.is_ready():
+        return {"ready": False, "items": []}
+    idx = [d["close"] for d in store.load_index_history()]
+    names = {u["ticker"]: u["name"] for u in store.load_universe()}
+    return {"ready": True, "items": relative.leaderboard(store.load_price_series(), idx, names)}
 
 
 @app.get("/api/buylist")
