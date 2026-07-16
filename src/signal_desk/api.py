@@ -109,89 +109,99 @@ def _refresh_live_quotes(open_markets: list[str]) -> None:
         store.note_live_attempt("no_quotes", open_markets)
 
 
+def _bot_loop_iteration() -> None:
+    """봇 루프 1회분 — 시세·재무·LLM 백필 등 전부 동기 블로킹이라, 이벤트 루프를 막지 않도록
+    asyncio.to_thread로 워커 스레드에서 실행한다(_bot_loop 참고)."""
+    _daily_kb_collect()  # 외부 소스(미주은·오건영·유튜브) 하루 1회 자동수집(공용)
+    enabled = db.user_bots_enabled()
+    open_markets = [m for m, is_open in
+                    (("kr", bot.is_market_hours()), ("us", bot.is_us_market_hours())) if is_open]
+    _refresh_live_quotes(open_markets)  # 장중 실시간가 오버레이 갱신(열린 시장만, 없으면 종가 복귀)
+    try:  # 배포 환경 US 시세 자동 점진 적재(us_prices는 gitignore로 캐시 없음) — 다 차면 no-op
+        bf = _backfill_us_prices_batch(25)
+        if bf["filled"]:
+            _us_signals.cache_clear()
+            log.info("US 시세 자동 백필 %d종목(잔여 %s)", bf["filled"], bf["missing"])
+    except Exception as e:
+        log.warning("US 시세 자동 백필 실패(무시): %s", type(e).__name__)
+    try:  # 사업 개요(무엇을 하는 회사) LLM 증분 백필 — 캐시 없는 종목만, 다 차면 no-op
+        an = _backfill_about_batch(15)
+        if an:
+            log.info("사업 개요 자동 백필 %d종목", an)
+    except Exception as e:
+        log.warning("사업 개요 자동 백필 실패(무시): %s", type(e).__name__)
+    try:  # 최근 행보 LLM 증분 백필 — KB 문서 있고 캐시 오래된 종목만(새 뉴스 반영)
+        mn = _backfill_moves_batch(10)
+        if mn:
+            log.info("최근 행보 자동 백필 %d종목", mn)
+    except Exception as e:
+        log.warning("최근 행보 자동 백필 실패(무시): %s", type(e).__name__)
+    for uid in enabled:  # 장중인 시장만 체결(장외 스킵)
+        for mkt in open_markets:
+            try:  # 예약 주문 먼저(목표가+추격폭 이내만) — run_once와 별개 경로
+                res = bot.execute_reservations(uid, market=mkt)
+                if res.get("executed") and uid not in bot.REFERENCE_BOTS:
+                    filled = [x for x in res["executed"] if x.get("status") == "filled"]
+                    if filled:
+                        log.info("예약 체결(uid=%s, %s): %d건", uid, mkt, len(filled))
+            except Exception as e:
+                log.warning("예약 실행 실패(uid=%s, %s): %s", uid, mkt, type(e).__name__)
+            result = bot.run_once(uid, market=mkt)
+            if not result.get("ok"):
+                log.info("봇 실행 스킵(uid=%s, %s): %s", uid, mkt, result.get("reason"))
+            elif uid not in bot.REFERENCE_BOTS:  # 실제 유저 체결만 푸시(레퍼런스 봇은 제외)
+                _push_trades(mkt, result)
+        if uid not in bot.REFERENCE_BOTS:
+            _scan_alerts(uid)  # 관심종목 시그널 변동 능동 스캔 → 텔레그램 푸시(앱 안 열어도)
+    # 하루 1회(평일 마감 후): 공용 KB 갱신 + 유저별 종가 스냅샷
+    now = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
+    if enabled and now.weekday() < 5 and now.time() >= datetime.time(15, 40) \
+            and db.kv_get("bot_daily_snap") != _kst_today():
+        try:
+            kb.refresh(_kb_targets())
+            _signals.cache_clear()
+        except Exception as e:
+            log.warning("마감후 KB 갱신 실패: %s", e)
+        try:   # 종목별·시장 수급(외국인·기관 순매수) 일일 갱신 — 수급 팩터/국면이 신선하게 유지되도록
+            store.fetch_flows(store.load_universe())
+            store.fetch_market_flow()
+            _signals.cache_clear(); _regime.cache_clear()
+        except Exception as e:
+            log.warning("마감후 수급 갱신 실패: %s", type(e).__name__)
+        try:   # 공매도 거래비중 일일 갱신 — 공매도 팩터 신선화(KRX, 마감후 확정)
+            store.fetch_short(store.load_universe())
+            _signals.cache_clear()
+        except Exception as e:
+            log.warning("마감후 공매도 갱신 실패: %s", type(e).__name__)
+        try:   # 애널 컨센서스 일별 PIT 스냅샷 축적 — 리비전/목표가v2용(아직 미반영, 데이터만 쌓음)
+            store.fetch_consensus(store.load_universe())
+        except Exception as e:
+            log.warning("마감후 컨센서스 수집 실패: %s", type(e).__name__)
+        try:
+            store.snapshot_signals(_signals())  # 팩터 PIT 스냅샷 누적(향후 팩터 백테스트용)
+        except Exception as e:
+            log.warning("시그널 스냅샷 실패: %s", type(e).__name__)
+        for uid in enabled:
+            bot.snapshot_positions(uid, "kr")
+            bot.snapshot_positions(uid, "us")
+        db.kv_set("bot_daily_snap", _kst_today())
+
+
 async def _bot_loop():
     """자동매매봇 백그라운드 루프 — 봇을 켠 유저별로 순회. 시그널은 공용, 계좌는 paper(종가 기준).
 
     interval(기본 5분)마다 순회하되, 실제 체결은 각 시장 장중에만 한다 — KR은 KR장중(09:00~15:20 평일),
     US는 US장중(KST 근사 22:30~06:00). 장외엔 비현실적 종가 체결을 피하려고 자동매매를 건너뛴다.
     (수동 '지금 실행'은 장 시간과 무관하게 즉시 실행 — 테스트용 override.)
-    KB 자동수집·종가 스냅샷은 하루 1회(kv 날짜 가드)."""
+    KB 자동수집·종가 스냅샷은 하루 1회(kv 날짜 가드).
+
+    루프 본문은 동기 블로킹(시세·재무·LLM 백필)이므로 asyncio.to_thread로 워커 스레드에서 돌린다 —
+    이벤트 루프가 자유로워야 배포 헬스체크(/)와 API 응답이 무거운 백필 중에도 막히지 않는다."""
     interval = config.bot_run_interval_minutes() * 60
+    await asyncio.sleep(5)  # 첫 헬스체크가 먼저 통과하도록, 무거운 초기 수집 전에 잠깐 양보
     while True:
         try:
-            _daily_kb_collect()  # 외부 소스(미주은·오건영·유튜브) 하루 1회 자동수집(공용)
-            enabled = db.user_bots_enabled()
-            open_markets = [m for m, is_open in
-                            (("kr", bot.is_market_hours()), ("us", bot.is_us_market_hours())) if is_open]
-            _refresh_live_quotes(open_markets)  # 장중 실시간가 오버레이 갱신(열린 시장만, 없으면 종가 복귀)
-            try:  # 배포 환경 US 시세 자동 점진 적재(us_prices는 gitignore로 캐시 없음) — 다 차면 no-op
-                bf = _backfill_us_prices_batch(25)
-                if bf["filled"]:
-                    _us_signals.cache_clear()
-                    log.info("US 시세 자동 백필 %d종목(잔여 %s)", bf["filled"], bf["missing"])
-            except Exception as e:
-                log.warning("US 시세 자동 백필 실패(무시): %s", type(e).__name__)
-            try:  # 사업 개요(무엇을 하는 회사) LLM 증분 백필 — 캐시 없는 종목만, 다 차면 no-op
-                an = _backfill_about_batch(15)
-                if an:
-                    log.info("사업 개요 자동 백필 %d종목", an)
-            except Exception as e:
-                log.warning("사업 개요 자동 백필 실패(무시): %s", type(e).__name__)
-            try:  # 최근 행보 LLM 증분 백필 — KB 문서 있고 캐시 오래된 종목만(새 뉴스 반영)
-                mn = _backfill_moves_batch(10)
-                if mn:
-                    log.info("최근 행보 자동 백필 %d종목", mn)
-            except Exception as e:
-                log.warning("최근 행보 자동 백필 실패(무시): %s", type(e).__name__)
-            for uid in enabled:  # 장중인 시장만 체결(장외 스킵)
-                for mkt in open_markets:
-                    try:  # 예약 주문 먼저(목표가+추격폭 이내만) — run_once와 별개 경로
-                        res = bot.execute_reservations(uid, market=mkt)
-                        if res.get("executed") and uid not in bot.REFERENCE_BOTS:
-                            filled = [x for x in res["executed"] if x.get("status") == "filled"]
-                            if filled:
-                                log.info("예약 체결(uid=%s, %s): %d건", uid, mkt, len(filled))
-                    except Exception as e:
-                        log.warning("예약 실행 실패(uid=%s, %s): %s", uid, mkt, type(e).__name__)
-                    result = bot.run_once(uid, market=mkt)
-                    if not result.get("ok"):
-                        log.info("봇 실행 스킵(uid=%s, %s): %s", uid, mkt, result.get("reason"))
-                    elif uid not in bot.REFERENCE_BOTS:  # 실제 유저 체결만 푸시(레퍼런스 봇은 제외)
-                        _push_trades(mkt, result)
-                if uid not in bot.REFERENCE_BOTS:
-                    _scan_alerts(uid)  # 관심종목 시그널 변동 능동 스캔 → 텔레그램 푸시(앱 안 열어도)
-            # 하루 1회(평일 마감 후): 공용 KB 갱신 + 유저별 종가 스냅샷
-            now = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
-            if enabled and now.weekday() < 5 and now.time() >= datetime.time(15, 40) \
-                    and db.kv_get("bot_daily_snap") != _kst_today():
-                try:
-                    kb.refresh(_kb_targets())
-                    _signals.cache_clear()
-                except Exception as e:
-                    log.warning("마감후 KB 갱신 실패: %s", e)
-                try:   # 종목별·시장 수급(외국인·기관 순매수) 일일 갱신 — 수급 팩터/국면이 신선하게 유지되도록
-                    store.fetch_flows(store.load_universe())
-                    store.fetch_market_flow()
-                    _signals.cache_clear(); _regime.cache_clear()
-                except Exception as e:
-                    log.warning("마감후 수급 갱신 실패: %s", type(e).__name__)
-                try:   # 공매도 거래비중 일일 갱신 — 공매도 팩터 신선화(KRX, 마감후 확정)
-                    store.fetch_short(store.load_universe())
-                    _signals.cache_clear()
-                except Exception as e:
-                    log.warning("마감후 공매도 갱신 실패: %s", type(e).__name__)
-                try:   # 애널 컨센서스 일별 PIT 스냅샷 축적 — 리비전/목표가v2용(아직 미반영, 데이터만 쌓음)
-                    store.fetch_consensus(store.load_universe())
-                except Exception as e:
-                    log.warning("마감후 컨센서스 수집 실패: %s", type(e).__name__)
-                try:
-                    store.snapshot_signals(_signals())  # 팩터 PIT 스냅샷 누적(향후 팩터 백테스트용)
-                except Exception as e:
-                    log.warning("시그널 스냅샷 실패: %s", type(e).__name__)
-                for uid in enabled:
-                    bot.snapshot_positions(uid, "kr")
-                    bot.snapshot_positions(uid, "us")
-                db.kv_set("bot_daily_snap", _kst_today())
+            await asyncio.to_thread(_bot_loop_iteration)
         except Exception as e:
             log.error("자동매매봇 루프 오류: %s", e)
         await asyncio.sleep(interval)
