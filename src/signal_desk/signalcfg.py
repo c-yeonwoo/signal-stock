@@ -36,6 +36,10 @@ def get_dict() -> dict:
     return {f: getattr(cfg, f) for f in FIELDS}
 
 
+_HISTORY_KEY = "signal_config_history"
+_HISTORY_MAX = 50
+
+
 def set_dict(data: dict) -> dict:
     """관리자 입력 저장(허용 필드만, 숫자 검증). 저장된 dict 반환."""
     ov = {}
@@ -49,6 +53,22 @@ def set_dict(data: dict) -> dict:
 def reset() -> dict:
     db.kv_set(_KEY, {})
     return get_dict()
+
+
+def append_history(entry: dict) -> None:
+    """설정 변경 감사 로그(최신 앞·최대 50건). entry: {ts, source, before, after, ...}."""
+    hist = db.kv_get(_HISTORY_KEY) or []
+    if not isinstance(hist, list):
+        hist = []
+    hist.insert(0, entry)
+    db.kv_set(_HISTORY_KEY, hist[:_HISTORY_MAX])
+
+
+def history(limit: int = 20) -> list[dict]:
+    hist = db.kv_get(_HISTORY_KEY) or []
+    if not isinstance(hist, list):
+        return []
+    return hist[:limit]
 
 
 def effective_config(regime_result: dict | None, macro_result: dict | None,

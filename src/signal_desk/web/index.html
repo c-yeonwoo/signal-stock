@@ -859,13 +859,44 @@
     <div class="seg-toggle" id="admin-seg" style="margin-bottom:16px">
       <button class="on" data-aseg="kb" onclick="switchAdminSeg('kb')">KB 문서</button>
       <button data-aseg="shortform" onclick="switchAdminSeg('shortform')">숏폼</button>
-      <button data-aseg="engine" onclick="switchAdminSeg('engine')">엔진·검증</button>
+      <button data-aseg="engine" onclick="switchAdminSeg('engine')">엔진·두뇌 <span id="admin-engine-badge" style="display:none;margin-left:4px;padding:1px 6px;border-radius:8px;background:var(--sell);color:#fff;font-size:10px;font-weight:700"></span></button>
     </div>
 
     <div id="admin-engine" style="display:none">
-    <div class="card" style="margin-top:0">
-      <b style="font-size:15px">시그널 엔진 · 검증 <span style="color:var(--dim);font-weight:600;font-size:12px">· 팩터 가중치·임계값 (관리자)</span></b>
-      <p class="page-desc" style="margin:6px 0 12px"><b>기본값을 권장합니다</b> — 평소엔 손대지 않아도 됩니다. 값을 바꾸고 <b>적용</b>하면 시그널·백테스트에 즉시 반영되고, <b>기본값</b>으로 언제든 복원됩니다.</p>
+    <p class="page-desc" style="margin:0 0 12px">흐름: <b>헬스 진단 → 개선 제안(승인) → 실측 확인</b>. 평소엔 제안 카드만 검토하면 되고, 수동 가중·백테스트는 필요할 때만 펼칩니다.</p>
+
+    <div class="card" id="brain-card" style="margin-top:0">
+      <div class="row" style="align-items:baseline;justify-content:space-between">
+        <div style="font-weight:700;font-size:15px">두뇌 레이어 <span style="color:var(--dim);font-weight:600;font-size:12px">· 엔진 헬스</span></div>
+        <span id="brain-score" style="font-family:var(--mono,monospace);font-size:12px;color:var(--dim)"></span>
+      </div>
+      <p class="page-desc" style="margin:8px 0 6px">소스→팩터→게이트→엔진→실측→진단→제안. 아래 카드에서 승인하면 엔진에 반영됩니다. <span id="brain-summary" style="color:var(--dim)"></span></p>
+      <div id="brain-graph" style="width:100%;height:360px"></div>
+      <div id="brain-legend" style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--dim);margin:4px 0 2px"></div>
+      <div id="brain-findings" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card" id="brain-proposals-card" style="margin-top:16px">
+      <div class="row" style="align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div style="font-weight:700;font-size:15px">개선 제안 <span style="color:var(--dim);font-weight:600;font-size:12px">· 승인 후에만 엔진 반영</span></div>
+        <div class="row" style="gap:6px;margin:0">
+          <button class="btn" onclick="refreshBrainProposals()" id="bp-refresh-btn">제안 새로고침</button>
+        </div>
+      </div>
+      <p class="page-desc" style="margin:8px 0 10px">실측에서 잘 안 맞는 팩터 비중을 <b>살짝</b> 줄이자고 올립니다. 수식 대신 “무엇이 바뀌는지·왜”만 보고 승인/반려하세요. 자동 적용은 없습니다.</p>
+      <div id="brain-proposals-body" class="placeholder" style="padding:12px 0">불러오는 중…</div>
+      <div id="brain-proposals-history" style="margin-top:12px;font-size:12px;color:var(--dim)"></div>
+    </div>
+
+    <div class="card" id="accuracy-card" style="margin-top:16px">
+      <div style="font-weight:700;font-size:15px">실측 성과 <span style="color:var(--dim);font-weight:600;font-size:12px">· track record</span></div>
+      <p class="page-desc" style="margin:8px 0 4px">매일 저장되는 <b>실제 시그널</b>이 이후 수익률로 얼마나 맞았는지 — 백테스트(시뮬)와 다른 <b>진짜 낸 신호</b> 성적입니다.</p>
+      <div id="accuracy-body" class="placeholder" style="padding:16px 0">불러오는 중…</div>
+    </div>
+
+    <details class="card" id="engine-manual-details" style="margin-top:16px">
+      <summary style="cursor:pointer;font-weight:700;font-size:15px">수동 가중치·임계값 <span style="color:var(--dim);font-weight:600;font-size:12px">· 필요할 때만</span></summary>
+      <p class="page-desc" style="margin:10px 0 12px"><b>기본값을 권장합니다.</b> 평소엔 위 제안 승인으로 충분합니다. 값을 바꾸고 <b>적용</b>하면 즉시 반영되고, <b>기본값</b>으로 복원됩니다. 가중치는 상대 비율로 정규화 · KB 정성은 veto 전용.</p>
       <details style="margin-bottom:14px">
         <summary style="cursor:pointer;color:var(--accent);font-weight:600;font-size:13px">계산 파이프라인 6단계 보기</summary>
         <div class="pipe" style="margin-top:10px">
@@ -882,9 +913,6 @@
           <div class="pipe-step" style="border-color:var(--ring)"><div class="ps-n">6 · 실행</div><div class="ps-t">페이퍼 봇</div><div class="ps-d">가드레일 안 후보 선별·모의계좌 매매(성향 반영)</div></div>
         </div>
       </details>
-
-      <b style="font-size:14px;display:block;margin:6px 0 4px">팩터 신뢰도(가중치) · 임계값</b>
-      <p class="page-desc" style="margin:0 0 12px">가중치는 상대 비율로 자동 정규화됩니다. <b>KB 정성은 점수 미반영</b>(악재 veto 전용).</p>
       <div class="wcfg">
         <div class="field">기술적 <input type="number" step="0.05" min="0" id="w_technical" class="ctrl"></div>
         <div class="field">기본적 <input type="number" step="0.05" min="0" id="w_fundamental" class="ctrl"></div>
@@ -908,30 +936,13 @@
         <button class="btn primary" onclick="saveEngine()" style="margin-left:auto">적용</button>
         <button class="btn" onclick="resetEngine()">기본값</button>
       </div>
-    </div>
+    </details>
 
     <details class="card" id="bt-details" style="margin-top:16px" ontoggle="if(this.open) loadBacktestAnalysis()">
       <summary style="cursor:pointer;font-weight:700;font-size:15px">백테스트 정밀 분석 <span class="trust-badge sim">시뮬</span> <span style="color:var(--dim);font-weight:600;font-size:12px">· 팩터별 승률 기여 (펼치면 계산)</span></summary>
       <p class="page-desc" style="margin:10px 0">가격기반 <b>시뮬레이션</b>입니다(실측 track record 아님). 각 팩터를 단독 백테스트해 기여도를 비교하고, 시간 구간별로 과최적화를 점검합니다. 기본적 팩터는 point-in-time으로 반영. (관리자 진단용)</p>
       <div id="bt-analysis" class="placeholder" style="padding:20px 0">펼치면 불러옵니다…</div>
     </details>
-
-    <div class="card" id="brain-card" style="margin-top:16px">
-      <div class="row" style="align-items:baseline;justify-content:space-between">
-        <div style="font-weight:700;font-size:15px">두뇌 레이어 <span style="color:var(--dim);font-weight:600;font-size:12px">· 코어 엔진 헬스체크</span></div>
-        <span id="brain-score" style="font-family:var(--mono,monospace);font-size:12px;color:var(--dim)"></span>
-      </div>
-      <p class="page-desc" style="margin:8px 0 6px">소스→팩터→게이트→엔진→실측 트래커→진단→제안 파이프라인을 노드 그래프로. 노드 색으로 헬스 상태를 봅니다(읽기 전용 — 제안까지, 적용은 관리자 승인). <span id="brain-summary" style="color:var(--dim)"></span></p>
-      <div id="brain-graph" style="width:100%;height:420px"></div>
-      <div id="brain-legend" style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--dim);margin:4px 0 2px"></div>
-      <div id="brain-findings" style="margin-top:8px"></div>
-    </div>
-
-    <div class="card" id="accuracy-card" style="margin-top:16px">
-      <div style="font-weight:700;font-size:15px">실측 성과 <span style="color:var(--dim);font-weight:600;font-size:12px">· track record</span></div>
-      <p class="page-desc" style="margin:8px 0 4px">매일 저장되는 <b>실제 시그널</b>(전 팩터·전 게이트 적용)이 이후 실현 수익률로 얼마나 맞았는지 — 백테스트(시뮬레이션)와 달리 시스템이 <b>진짜 낸 신호</b>의 성적입니다. 스냅샷 도입일부터 매일 누적되며, 수익률은 종목 내 비율이라 스케일 시세와 무관합니다.</p>
-      <div id="accuracy-body" class="placeholder" style="padding:16px 0">불러오는 중…</div>
-    </div>
 
     </div><!-- /#admin-engine -->
 
@@ -3726,7 +3737,7 @@ function switchAdminSeg(seg){
   document.getElementById('admin-engine').style.display = seg === 'engine' ? '' : 'none';
   document.getElementById('admin-kb').style.display = seg === 'kb' ? '' : 'none';
   document.getElementById('admin-shortform').style.display = seg === 'shortform' ? '' : 'none';
-  if (seg === 'engine') { loadEngine(); loadBrain(); loadAccuracy(); }   // 백테스트는 접이식(bt-details) 펼칠 때만 로드
+  if (seg === 'engine') { loadEngine(); loadBrain(); loadBrainProposals(); loadAccuracy(); }   // 백테스트·수동가중은 접이식
   if (seg === 'kb') { loadKbDocs(); _initDropzone(); }
   if (seg === 'shortform') { loadShortform(); loadSfBg(); }
   history.replaceState(null, '', '#admin/' + seg);   // 새로고침 시 서브탭 유지
@@ -4021,6 +4032,103 @@ async function loadBrain(){
     fb.innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:4px">진단(규칙 기반)</div>'
       + d.findings.map(f => `<div style="font-size:12.5px;color:${f.level === 'warn' ? 'var(--sell)' : 'var(--dim)'};padding:2px 0">${ic[f.level] || '·'} ${esc(f.text)}</div>`).join('');
   } else fb.innerHTML = '<div style="font-size:12px;color:var(--dim-2)">특이사항 없음 — 파이프라인 정상.</div>';
+}
+
+const _BP_CONF = { high: '신뢰 높음', medium: '신뢰 보통', low: '신뢰 낮음' };
+const _BP_FIELD_KO = {
+  weight_technical: '기술', weight_fundamental: '기본', weight_valuation: '저평가',
+  weight_reversion: '낙폭', weight_flow: '수급', weight_quality: '퀄리티',
+  weight_momentum: '모멘텀', weight_short: '공매도',
+  buy_threshold: '매수 임계', strong_buy_threshold: '강력매수 임계',
+  sell_threshold: '매도 임계', strong_sell_threshold: '강력매도 임계',
+};
+function _setEngineBadge(n){
+  const b = document.getElementById('admin-engine-badge');
+  if (!b) return;
+  if (n > 0) { b.style.display = ''; b.textContent = String(n); }
+  else { b.style.display = 'none'; b.textContent = ''; }
+}
+function _patchLine(patch, baseline){
+  return Object.entries(patch || {}).map(([k, v]) => {
+    const from = baseline && baseline[k] != null ? fmtNum(baseline[k], 2) : '?';
+    return `${_BP_FIELD_KO[k] || k} ${from} → ${fmtNum(v, 2)}`;
+  }).join(' · ');
+}
+async function loadBrainProposals(){
+  const el = document.getElementById('brain-proposals-body');
+  const histEl = document.getElementById('brain-proposals-history');
+  if (!el) return;
+  try {
+    const d = await (await fetch('/api/brain/proposals?status=draft')).json();
+    _setEngineBadge(d.draft_count || 0);
+    const items = d.items || [];
+    if (!items.length) {
+      el.className = 'placeholder';
+      el.innerHTML = '대기 중인 제안이 없습니다. 실측이 쌓이면 <b>제안 새로고침</b>으로 초안을 만들 수 있습니다.';
+    } else {
+      el.className = '';
+      el.innerHTML = items.map(it => {
+        const conf = _BP_CONF[it.confidence] || it.confidence || '';
+        const confColor = it.confidence === 'low' ? 'var(--sell)' : (it.confidence === 'high' ? 'var(--sig-buy)' : 'var(--dim)');
+        const keys = Object.keys(it.patch || {});
+        const fromBase = {};
+        if (it.evidence && it.evidence.from_weight != null && keys[0]) fromBase[keys[0]] = it.evidence.from_weight;
+        const fromTo = _patchLine(it.patch, Object.keys(fromBase).length ? fromBase : (it.baseline || {}));
+        return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 10px">
+          <div class="row" style="align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 6px">
+            <b style="font-size:14px">${esc(it.title || '개선 제안')}</b>
+            <span style="font-size:11px;color:${confColor}">${esc(conf)}</span>
+          </div>
+          <div style="font-size:13px;line-height:1.45;margin-bottom:6px">${esc(it.body_ko || '')}</div>
+          <div style="font-size:12px;color:var(--dim);margin-bottom:4px">${esc(it.rationale_ko || '')}</div>
+          <div style="font-size:12px;font-weight:600;margin-bottom:10px">적용 시: ${esc(fromTo || '변경 없음')}</div>
+          <div class="row" style="gap:6px;margin:0">
+            <button class="btn primary" onclick="reviewBrainProposal('${esc(it.id)}','approved')">승인하고 적용</button>
+            <button class="btn" onclick="reviewBrainProposal('${esc(it.id)}','rejected')">반려</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+    const hist = d.history || [];
+    if (histEl) {
+      histEl.innerHTML = hist.length
+        ? '<div style="font-weight:700;margin-bottom:4px">최근 설정 변경</div>'
+          + hist.map(h => {
+            const when = h.ts ? new Date(h.ts * 1000).toLocaleString('ko-KR') : '';
+            const src = h.source === 'brain_proposal' ? '제안 승인' : (h.source === 'manual' ? '수동' : (h.source || ''));
+            const title = h.title || _patchLine(h.patch, h.before) || '설정 변경';
+            return `<div style="padding:2px 0">${esc(when)} · ${esc(src)} · ${esc(title)}</div>`;
+          }).join('')
+        : '';
+    }
+  } catch (e) {
+    el.className = ''; el.textContent = '불러오지 못했습니다.';
+  }
+}
+async function refreshBrainProposals(){
+  const btn = document.getElementById('bp-refresh-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '생성 중…'; }
+  try {
+    const d = await (await fetch('/api/brain/proposals/refresh', { method: 'POST' })).json();
+    if (d.reason && !(d.created)) {
+      const el = document.getElementById('brain-proposals-body');
+      if (el) { el.className = 'placeholder'; el.textContent = d.reason; }
+    }
+    await loadBrainProposals();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '제안 새로고침'; }
+  }
+}
+async function reviewBrainProposal(id, status){
+  const verb = status === 'approved' ? '승인하고 엔진에 적용할까요?' : '이 제안을 반려할까요?';
+  if (!confirm(verb)) return;
+  const r = await (await fetch('/api/brain/proposals/' + encodeURIComponent(id) + '/review', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  })).json();
+  if (r.ok === false || r.detail) { alert(r.detail || r.error || '처리 실패'); return; }
+  await loadBrainProposals();
+  if (status === 'approved') { await loadEngine(); await loadBrain(); }
 }
 
 // 실측 성과(track record) — 실제 낸 시그널이 이후 수익률로 얼마나 맞았나. 매일 누적.
