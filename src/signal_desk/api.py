@@ -2189,8 +2189,7 @@ def brain_proposals_list(status: str | None = "draft"):
     if st == "all":
         st = None
     items = brain_proposals.list_proposals(status=st)
-    drafts = db.brain_proposal_list(status="draft", limit=200)
-    return {"items": items, "draft_count": len(drafts),
+    return {"items": items, "draft_count": db.brain_proposal_draft_count(),
             "history": signalcfg.history(limit=8)}
 
 
@@ -2198,7 +2197,7 @@ def brain_proposals_list(status: str | None = "draft"):
 def brain_proposals_refresh():
     """실측 IC 기준으로 draft 제안 생성/갱신(자동 적용 없음)."""
     out = brain_proposals.refresh(_accuracy_snapshot(), signalcfg.get_dict())
-    out["draft_count"] = len(db.brain_proposal_list(status="draft", limit=200))
+    out["draft_count"] = db.brain_proposal_draft_count()
     return out
 
 

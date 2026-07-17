@@ -898,6 +898,26 @@ def brain_proposal_set_status(pid: str, status: str, note: str = "") -> None:
     c.close()
 
 
+def brain_proposal_claim(pid: str, status: str, note: str = "") -> bool:
+    """draft → approved|rejected 원자 전환. True=이 요청이 선점, False=이미 처리됨."""
+    c = conn()
+    cur = c.execute(
+        "UPDATE brain_proposals SET status=?, note=?, reviewed=? "
+        "WHERE id=? AND status='draft'",
+        (status, note or None, int(time.time()), pid))
+    c.commit()
+    ok = cur.rowcount > 0
+    c.close()
+    return ok
+
+
+def brain_proposal_draft_count() -> int:
+    c = conn()
+    n = c.execute("SELECT COUNT(*) FROM brain_proposals WHERE status='draft'").fetchone()[0]
+    c.close()
+    return int(n)
+
+
 def brain_proposal_draft_for_factor(factor: str) -> dict | None:
     """동일 팩터의 미검토 draft가 있으면 반환 — refresh 시 중복 카드 방지."""
     c = conn()

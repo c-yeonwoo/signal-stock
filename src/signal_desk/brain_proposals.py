@@ -127,7 +127,10 @@ def refresh(accuracy: dict, weights: dict | None = None) -> dict:
 
 
 def review(pid: str, status: str, note: str = "") -> dict:
-    """승인|반려. 승인 시 patch를 현재 설정에 병합·이력 기록·캐시는 호출측에서 clear."""
+    """승인|반려. 승인 시 patch를 현재 설정에 병합·이력 기록·캐시는 호출측에서 clear.
+
+    status 전환은 draft CAS(claim)로 이중 승인을 막는다 — 선점 성공 후에만 설정 반영.
+    """
     if status not in ("approved", "rejected"):
         return {"ok": False, "error": "status는 approved|rejected"}
     item = db.brain_proposal_get(pid)
@@ -136,12 +139,17 @@ def review(pid: str, status: str, note: str = "") -> dict:
     if item["status"] != "draft":
         return {"ok": False, "error": f"이미 처리된 제안입니다({item['status']})."}
 
+    # 반려는 설정 변경 없이 claim만. 승인은 claim 선점 후에 patch 적용(이중 적용 방지).
+    if not db.brain_proposal_claim(pid, status, note):
+        return {"ok": False, "error": "이미 처리된 제안입니다."}
+
     applied = None
     if status == "approved":
         before = signalcfg.get_dict()
         patch = {k: v for k, v in (item.get("patch") or {}).items() if k in signalcfg.FIELDS}
         if not patch:
-            return {"ok": False, "error": "적용할 변경값이 없습니다."}
+            # claim은 됐지만 적용값 없음 — 상태를 rejected로 되돌리지 않고 에러만(드묾)
+            return {"ok": False, "error": "적용할 변경값이 없습니다.", "id": pid, "status": status}
         merged = {**before, **patch}
         after = signalcfg.set_dict(merged)
         signalcfg.append_history({
@@ -157,7 +165,6 @@ def review(pid: str, status: str, note: str = "") -> dict:
         applied = {"patch": patch, "config": after}
         log.info("brain proposal approved id=%s patch=%s", pid, patch)
 
-    db.brain_proposal_set_status(pid, status, note)
     return {"ok": True, "id": pid, "status": status, "applied": applied}
 
 

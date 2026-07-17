@@ -83,3 +83,16 @@ def test_refresh_idempotent_same_factor_draft(tmp_path, monkeypatch):
     drafts = [d for d in db.brain_proposal_list(status="draft")
               if (d.get("evidence") or {}).get("factor") == "quality"]
     assert len(drafts) == 1
+
+
+def test_double_approve_rejected(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    signalcfg.set_dict(_WEIGHTS)
+    acc = {"ready": True, "factor_ic": {"short": -0.05}, "coverage": {"matured_primary": 40}}
+    brain_proposals.refresh(acc, signalcfg.get_dict())
+    pid = db.brain_proposal_list(status="draft")[0]["id"]
+    assert brain_proposals.review(pid, "approved")["ok"]
+    w1 = signalcfg.get_dict()["weight_short"]
+    again = brain_proposals.review(pid, "approved")
+    assert again["ok"] is False
+    assert signalcfg.get_dict()["weight_short"] == w1  # 이중 적용 없음
