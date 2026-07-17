@@ -23,7 +23,10 @@ from fastapi import File as FastFile
 from fastapi import Form, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
-from signal_desk import auth, bot, brain, chat, company, config, db, kb, kb_search, notify, shortform, signalcfg, store, strategy
+from signal_desk import (
+    auth, bot, brain, brain_proposals, chat, company, config, db, kb, kb_search,
+    notify, shortform, signalcfg, store, strategy,
+)
 from signal_desk.reference import (cycle, etfs as etfs_ref, glossary, guru_screens, gurus as gurus_ref,
                                     quant_methods, sectors, us_ko, valuechain)
 from signal_desk.signals import accuracy, macro, narrative, opportunity, rebalance, regime, regime_zone, relative, scenario, target, valuation
@@ -243,6 +246,7 @@ _ADMIN_PATHS = {
     "/api/kb/collect-fanding", "/api/kb/collect-outstanding", "/api/kb/collect-youtube", "/api/kb/collect-rss",
     "/api/shortform/generate", "/api/shortform/generate-performance",
     "/api/shortform/queue", "/api/shortform/candidates",
+    "/api/brain/proposals", "/api/brain/proposals/refresh", "/api/engine/config/history",
     "/api/data-health", "/api/egress-ip",
 }
 
@@ -2169,6 +2173,57 @@ def brain_get():
     return brain.build(store.data_freshness(), acc, signalcfg.get_dict(), store.is_ready())
 
 
+def _accuracy_snapshot() -> dict:
+    """실측 accuracy dict — 제안 refresh·brain이 공유."""
+    acc: dict = {"ready": False}
+    df = store.load_signal_history()
+    if not df.empty:
+        acc = accuracy.realized_accuracy(df.to_dict("records"), store.load_all_dated_closes())
+    return acc
+
+
+@app.get("/api/brain/proposals")
+def brain_proposals_list(status: str | None = "draft"):
+    """두뇌 개선 제안 큐(관리자). status=draft|approved|rejected 또는 빈 값=전체."""
+    st = (status or "").strip() or None
+    if st == "all":
+        st = None
+    items = brain_proposals.list_proposals(status=st)
+    drafts = db.brain_proposal_list(status="draft", limit=200)
+    return {"items": items, "draft_count": len(drafts),
+            "history": signalcfg.history(limit=8)}
+
+
+@app.post("/api/brain/proposals/refresh")
+def brain_proposals_refresh():
+    """실측 IC 기준으로 draft 제안 생성/갱신(자동 적용 없음)."""
+    out = brain_proposals.refresh(_accuracy_snapshot(), signalcfg.get_dict())
+    out["draft_count"] = len(db.brain_proposal_list(status="draft", limit=200))
+    return out
+
+
+@app.post("/api/brain/proposals/{pid}/review")
+def brain_proposals_review(pid: str, request: Request, data: dict = Body(default={})):
+    """제안 승인|반려. 승인 시 patch→signalcfg + 이력, 시그널 캐시 무효화."""
+    _admin_or_403(request)
+    status = str(data.get("status") or "").strip()
+    out = brain_proposals.review(pid, status, str(data.get("note") or ""))
+    if not out.get("ok"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=out.get("error") or "처리 실패")
+    if status == "approved":
+        _signals.cache_clear()
+        _backtest.cache_clear()
+        _backtest_analysis.cache_clear()
+    return out
+
+
+@app.get("/api/engine/config/history")
+def engine_config_history(limit: int = 20):
+    """엔진 설정 변경 이력(제안 승인·수동 적용 감사)."""
+    return {"history": signalcfg.history(limit=min(int(limit or 20), 50))}
+
+
 @app.get("/api/methods")
 def methods_get():
     """퀀트 방법론 레퍼런스 카탈로그 — 두뇌 레이어(자가 진단)가 gap→검증방법 매핑에 참조.
@@ -2200,7 +2255,14 @@ def engine_config_get():
 @app.post("/api/engine/config")
 def engine_config_set(data: dict = Body(...)):
     """가중치·임계값 저장 → 시그널/백테스트 캐시 무효화(즉시 반영)."""
+    before = signalcfg.get_dict()
     out = signalcfg.set_dict(data)
+    signalcfg.append_history({
+        "ts": int(time.time()), "source": "manual",
+        "before": before, "after": out, "patch": {
+            k: out[k] for k in out if before.get(k) != out.get(k)
+        },
+    })
     _signals.cache_clear()
     _backtest.cache_clear()
     _backtest_analysis.cache_clear()

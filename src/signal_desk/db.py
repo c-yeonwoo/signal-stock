@@ -57,6 +57,10 @@ CREATE TABLE IF NOT EXISTS alerts(id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTE
 CREATE TABLE IF NOT EXISTS shortform(id TEXT PRIMARY KEY, ticker TEXT, name TEXT, kind TEXT, score REAL,
     title TEXT, script TEXT, caption TEXT, hashtags TEXT, card_svg TEXT, scenes TEXT,
     status TEXT NOT NULL DEFAULT 'draft', note TEXT, created INTEGER, reviewed INTEGER);
+CREATE TABLE IF NOT EXISTS brain_proposals(id TEXT PRIMARY KEY, kind TEXT NOT NULL,
+    title TEXT, body_ko TEXT, rationale_ko TEXT, patch TEXT, baseline TEXT, evidence TEXT,
+    method_key TEXT, confidence TEXT, status TEXT NOT NULL DEFAULT 'draft',
+    note TEXT, created INTEGER, reviewed INTEGER);
 CREATE TABLE IF NOT EXISTS bot_equity(uid INTEGER, market TEXT NOT NULL DEFAULT 'kr', date TEXT,
     total_eval REAL, cash REAL, invested REAL, PRIMARY KEY(uid, market, date));
 CREATE TABLE IF NOT EXISTS kb_embeddings(
@@ -828,6 +832,84 @@ def shortform_recent_tickers(within_sec: int) -> set[str]:
                      (int(time.time()) - within_sec,)).fetchall()
     c.close()
     return {t for (t,) in rows}
+
+
+# ---------- brain_proposals (두뇌 개선 제안 큐 — 관리자 승인 후 엔진 반영) ----------
+_BRAIN_PROP_COLS = ("id,kind,title,body_ko,rationale_ko,patch,baseline,evidence,"
+                    "method_key,confidence,status,note,created,reviewed")
+
+
+def _brain_proposal_row(r) -> dict:
+    (pid, kind, title, body_ko, rationale_ko, patch, baseline, evidence,
+     method_key, confidence, status, note, created, reviewed) = r
+    return {"id": pid, "kind": kind, "title": title, "body_ko": body_ko,
+            "rationale_ko": rationale_ko,
+            "patch": json.loads(patch) if patch else {},
+            "baseline": json.loads(baseline) if baseline else {},
+            "evidence": json.loads(evidence) if evidence else {},
+            "method_key": method_key, "confidence": confidence,
+            "status": status, "note": note, "created": created, "reviewed": reviewed}
+
+
+def brain_proposal_upsert(item: dict) -> None:
+    """제안 upsert(동일 id면 덮어씀). draft 재생성·일별 멱등에 사용."""
+    c = conn()
+    c.execute(f"INSERT OR REPLACE INTO brain_proposals({_BRAIN_PROP_COLS}) "
+              "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              (item["id"], item.get("kind") or "weight_nudge",
+               item.get("title"), item.get("body_ko"), item.get("rationale_ko"),
+               json.dumps(item.get("patch") or {}, ensure_ascii=False),
+               json.dumps(item.get("baseline") or {}, ensure_ascii=False),
+               json.dumps(item.get("evidence") or {}, ensure_ascii=False),
+               item.get("method_key"), item.get("confidence"),
+               item.get("status", "draft"), item.get("note"),
+               item.get("created") or int(time.time()), item.get("reviewed")))
+    c.commit()
+    c.close()
+
+
+def brain_proposal_list(status: str | None = None, limit: int = 50) -> list[dict]:
+    c = conn()
+    if status:
+        rows = c.execute(
+            f"SELECT {_BRAIN_PROP_COLS} FROM brain_proposals WHERE status=? "
+            "ORDER BY created DESC LIMIT ?", (status, limit)).fetchall()
+    else:
+        rows = c.execute(
+            f"SELECT {_BRAIN_PROP_COLS} FROM brain_proposals "
+            "ORDER BY created DESC LIMIT ?", (limit,)).fetchall()
+    c.close()
+    return [_brain_proposal_row(r) for r in rows]
+
+
+def brain_proposal_get(pid: str) -> dict | None:
+    c = conn()
+    r = c.execute(f"SELECT {_BRAIN_PROP_COLS} FROM brain_proposals WHERE id=?",
+                  (pid,)).fetchone()
+    c.close()
+    return _brain_proposal_row(r) if r else None
+
+
+def brain_proposal_set_status(pid: str, status: str, note: str = "") -> None:
+    c = conn()
+    c.execute("UPDATE brain_proposals SET status=?, note=?, reviewed=? WHERE id=?",
+              (status, note or None, int(time.time()), pid))
+    c.commit()
+    c.close()
+
+
+def brain_proposal_draft_for_factor(factor: str) -> dict | None:
+    """동일 팩터의 미검토 draft가 있으면 반환 — refresh 시 중복 카드 방지."""
+    c = conn()
+    rows = c.execute(
+        f"SELECT {_BRAIN_PROP_COLS} FROM brain_proposals WHERE status='draft' "
+        "ORDER BY created DESC LIMIT 80").fetchall()
+    c.close()
+    for r in rows:
+        item = _brain_proposal_row(r)
+        if (item.get("evidence") or {}).get("factor") == factor:
+            return item
+    return None
 
 
 # ---------- bot_equity (봇 일별 자산 스냅샷 — track record 자산곡선) ----------
