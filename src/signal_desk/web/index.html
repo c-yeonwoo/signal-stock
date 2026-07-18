@@ -279,24 +279,23 @@
   .vc-node.us { color:var(--accent); border-color:var(--accent); cursor:pointer; font-weight:600; }
   .vc-node.us:hover { background:var(--brand-50); }
   .vc-node.ov { color:var(--dim); }
-  /* 시황 가설 — IF 트리 (ECharts tree, LR) */
-  .hypo-graph { width:100%; height:min(560px, 62vh); min-height:420px; border:1px solid var(--line);
-    border-radius:var(--r-lg); background:
-      linear-gradient(105deg, #faf9f6 0%, var(--panel) 42%, #f3faf8 100%);
-    box-shadow:var(--shadow-sm); overflow:hidden; }
+  /* 시황 가설 — 미니멀 LR 트리 + 줌 */
+  .hypo-graph-wrap { position:relative; border:1px solid var(--line); border-radius:var(--r-lg);
+    background:var(--panel); overflow:hidden; }
+  .hypo-graph { width:100%; height:min(640px, 70vh); min-height:480px; }
+  .hypo-zoom-hint { position:absolute; right:12px; bottom:10px; z-index:2; font-size:11px;
+    color:var(--dim-2); background:rgba(255,255,255,.88); padding:4px 8px; border-radius:var(--r-sm);
+    pointer-events:none; }
   .hypo-if-bar { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 12px; }
-  .hypo-if-chip { border:1px solid var(--line); border-radius:var(--r-md); padding:7px 14px;
-    font-size:12px; font-weight:650; color:var(--dim); background:var(--panel); cursor:pointer;
-    letter-spacing:-.01em; transition:border-color .12s, background .12s, color .12s, box-shadow .12s; }
-  .hypo-if-chip:hover { border-color:var(--accent); color:var(--txt); box-shadow:var(--shadow-sm); }
-  .hypo-if-chip.on { border-color:var(--accent); color:var(--accent); background:var(--accent-weak);
-    box-shadow:0 0 0 3px var(--ring); }
-  .hypo-if-chip .pct { font-variant-numeric:tabular-nums; margin-left:6px; font-weight:800;
-    font-size:13px; }
+  .hypo-if-chip { border:none; border-bottom:2px solid transparent; border-radius:0; padding:6px 4px;
+    font-size:13px; font-weight:600; color:var(--dim); background:transparent; cursor:pointer;
+    letter-spacing:-.02em; }
+  .hypo-if-chip:hover { color:var(--txt); }
+  .hypo-if-chip.on { color:var(--accent); border-bottom-color:var(--accent); }
+  .hypo-if-chip .pct { font-variant-numeric:tabular-nums; margin-left:6px; font-weight:700;
+    font-size:12px; color:inherit; opacity:.75; }
   .hypo-legend { display:flex; flex-wrap:wrap; gap:14px; font-size:11px; color:var(--dim); margin:10px 0 0;
-    letter-spacing:-.01em; }
-  .hypo-legend i { display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:5px;
-    vertical-align:middle; border:1px solid rgba(11,18,32,.08); }
+    letter-spacing:-.01em; line-height:1.45; }
   .hypo-detail { margin-top:12px; border:1px solid var(--line); border-radius:var(--r-md);
     background:var(--panel); padding:14px 16px; font-size:13px; line-height:1.5; }
   .hypo-detail .hd-title { font-weight:700; font-size:15px; margin-bottom:6px; }
@@ -733,23 +732,22 @@
 
     <div id="cycle-seg-hypo" style="display:none">
       <h3 class="page-head" style="font-size:18px;margin-top:0"><span class="layer-badge ctx">맥락</span> 시황 가설
-        <span style="color:var(--dim);font-size:13px;font-weight:600">· 뉴스·KB · 수동 생성 · 예측 아님</span>
+        <span style="color:var(--dim);font-size:13px;font-weight:600">· 뉴스 핫이슈 · 수동 생성 · 예측 아님</span>
         <button type="button" class="btn" id="hypo-refresh-btn" style="display:none;margin-left:10px;padding:3px 10px;font-size:12px"
           onclick="refreshHypothesis()">가설 생성</button>
       </h3>
-      <p class="page-desc">최근 뉴스·KB에서 뽑은 <b>거시 핫이슈 IF</b>와, 그렇게 됐을 때 예상되는
-        <b>지표 then → 결과</b>를 왼쪽→오른쪽으로 봅니다. <b>관리자 수동 생성</b>(Haiku 1회) 후
-        <b>DB에 저장</b>되어 다시 열면 그대로 보입니다. Layer0 숫자는 <b>지지도</b>(배타 가설 간 상대 가중)이며
-        확률이 아닙니다. 시그널·봇과 별개입니다.</p>
+      <p class="page-desc">최근 뉴스·KB에서 지금 중요한 <b>거시 이슈</b>(1~4개, 배타적일 필요 없음)와
+        이어질 수 있는 흐름을 왼쪽→오른쪽으로 봅니다. 노드에는 <b>쉬운 말</b>만, 지표·근거는 호버·아래 카드에.
+        <b>관리자 수동 생성</b>(Haiku) 후 DB에 저장됩니다. %는 이슈 간 <b>관심 비중</b>이지 확률이 아닙니다.</p>
       <div id="hypo-asof" style="font-size:11px;color:var(--dim-2);margin:0 0 10px"></div>
       <div id="hypo-if-bar" class="hypo-if-bar"></div>
-      <div id="hypo-graph" class="hypo-graph"><div class="placeholder" style="padding:24px">불러오는 중…</div></div>
+      <div class="hypo-graph-wrap">
+        <div id="hypo-graph" class="hypo-graph"><div class="placeholder" style="padding:24px">불러오는 중…</div></div>
+        <div class="hypo-zoom-hint">휠·핀치로 확대·축소 · 드래그로 이동</div>
+      </div>
       <div class="hypo-legend">
-        <span><i style="background:#ecfdf8;border-color:#0F766E"></i>IF · 지지도</span>
-        <span><i style="background:#e8f5e9;border-color:#0B8F5A"></i>aligned</span>
-        <span><i style="background:#fff8e1;border-color:#c2410c"></i>watching</span>
-        <span><i style="background:#fce4ec;border-color:#C23B3B"></i>diverging</span>
-        <span>흐름: IF → then/and/but → outcome (좌→우)</span>
+        <span>흐름: 이슈 → 그러면/그런데 → 결과</span>
+        <span>지표가 맞는 중 / 아직 지켜보는 중 / 지표가 다르게 흐름</span>
       </div>
       <div id="hypo-detail" class="hypo-detail" style="display:none"></div>
       <p id="hypo-disc" style="margin-top:12px;font-size:11px;color:var(--dim-2);line-height:1.5"></p>
@@ -1547,85 +1545,63 @@ function drawCycleChart(phases, cur){
   _cycleChart.resize();
 }
 
-// ===== 시황 가설 — 배타적 IF → then → outcome (맥락 · 시그널/봇 무관) =====
+// ===== 시황 가설 — 핫이슈 트리 (쉬운 말 · 전체 펼침 · 줌) =====
 let _hypoData = null;
 let _hypoActiveIf = null;
 let _hypoSelected = null;
 let _hypoChart = null;
 let _hypoById = {};
-const _HYPO_ST_LABEL = { aligned: 'aligned', watching: 'watching', diverging: 'diverging', 'n/a': 'n/a' };
-const _HYPO_NODE_STYLE = {
-  root:     { fill: '#0B1220', border: '#0B1220', title: '#F3F1EC', meta: '#a8b0c0' },
-  if:       { fill: '#ecfdf8', border: '#0F766E', title: '#0B1220', meta: '#0F766E' },
-  ifActive: { fill: '#ccfbf1', border: '#0d9488', title: '#0B1220', meta: '#115e59' },
-  then:     { fill: '#ffffff', border: '#c5ddd8', title: '#0B1220', meta: '#5c6578' },
-  outcome:  { fill: '#f7faf9', border: '#9dbbb5', title: '#0B1220', meta: '#5c6578' },
-  aligned:  { fill: '#e8f5e9', border: '#0B8F5A', title: '#0B1220', meta: '#0B8F5A' },
-  watching: { fill: '#fff8e1', border: '#c2410c', title: '#0B1220', meta: '#c2410c' },
-  diverging:{ fill: '#fce4ec', border: '#C23B3B', title: '#0B1220', meta: '#C23B3B' },
-};
 
 function _hypoIndex(node, map){
   if (!node || !node.id) return;
   map[node.id] = node;
   (node.children || []).forEach(c => _hypoIndex(c, map));
 }
-function _hypoStatusBadge(st){
-  const k = (st === 'n/a' || !st) ? 'na' : st;
-  return `<span class="hypo-st ${k}">${esc(_HYPO_ST_LABEL[st] || st || 'n/a')}</span>`;
+function _hypoStatusKo(n){
+  return (n && (n.status_ko || '')) || ({
+    aligned: '지표가 맞는 중', watching: '아직 지켜보는 중',
+    diverging: '지표가 다르게 흐름', 'n/a': '',
+  })[(n && n.status) || 'n/a'] || '';
 }
-function _hypoWrapLabel(text, maxLen){
-  const s = String(text || '');
-  if (s.length <= maxLen) return s;
-  return s.slice(0, maxLen - 1) + '…';
+function _hypoEdgeKo(n){
+  return (n && n.edge_ko) || ({ then: '그러면', and: '그리고', but: '그런데', if: '이슈' })[(n && n.edge) || ''] || '';
 }
-function _hypoNodePalette(kind, st, isActiveIf){
-  if (kind === 'root') return _HYPO_NODE_STYLE.root;
-  if (kind === 'if') return isActiveIf ? _HYPO_NODE_STYLE.ifActive : _HYPO_NODE_STYLE.if;
-  if (kind === 'then' || kind === 'outcome') {
-    if (st === 'aligned' || st === 'watching' || st === 'diverging') return _HYPO_NODE_STYLE[st];
-    return kind === 'outcome' ? _HYPO_NODE_STYLE.outcome : _HYPO_NODE_STYLE.then;
-  }
-  return _HYPO_NODE_STYLE.then;
+function _hypoDotColor(kind, st, selected){
+  if (kind === 'root') return '#0B1220';
+  if (kind === 'if') return selected ? '#0F766E' : '#5c6578';
+  if (st === 'aligned') return '#0B8F5A';
+  if (st === 'diverging') return '#C23B3B';
+  if (st === 'watching') return '#c2410c';
+  return kind === 'outcome' ? '#0F766E' : '#8b93a7';
 }
 function _hypoToEcharts(node, activeIf){
   const kind = node.kind || 'then';
   const st = node.status || 'n/a';
-  const isIf = kind === 'if';
-  const isActiveIf = isIf && node.id === activeIf;
-  const pal = _hypoNodePalette(kind, st, isActiveIf);
-  const label = _hypoWrapLabel(node.label || node.id, kind === 'root' ? 18 : 22);
+  const selected = kind === 'if' && node.id === activeIf;
+  const title = String(node.label || node.id);
   let meta = '';
-  if (kind === 'root') meta = '시황 가설';
-  else if (kind === 'if') meta = `IF · 지지도 ${node.support_pct ?? '–'}%`;
-  else if (kind === 'then') meta = `${String(node.edge || 'then').toUpperCase()} · ${st}`;
-  else if (kind === 'outcome') meta = `OUT · ${st === 'n/a' ? '결과' : st}`;
-  const collapsed = isIf ? (node.id !== activeIf) : false;
+  if (kind === 'root') meta = '뉴스·KB 기준';
+  else if (kind === 'if') meta = `관심 ${node.support_pct ?? '–'}%`;
+  else if (kind === 'then') meta = [_hypoEdgeKo(node), _hypoStatusKo(node)].filter(Boolean).join(' · ');
+  else if (kind === 'outcome') meta = _hypoStatusKo(node) || '결과';
   const kids = (node.children || []).map(c => _hypoToEcharts(c, activeIf));
-  const w = kind === 'root' ? 132 : (kind === 'if' ? 168 : 158);
-  const h = kind === 'root' ? 48 : 56;
+  const size = kind === 'root' ? 14 : (kind === 'if' ? 12 : 9);
   return {
-    name: label,
+    name: title,
     value: node.id,
     hypoId: node.id,
     kind,
     hypoMeta: meta,
-    hypoPal: pal,
-    collapsed,
+    collapsed: false,
     children: kids,
-    symbolSize: [w, h],
+    symbolSize: size,
     itemStyle: {
-      color: pal.fill,
-      borderColor: pal.border,
-      borderWidth: isActiveIf ? 2.5 : 1.5,
-      shadowBlur: isActiveIf ? 14 : 6,
-      shadowColor: isActiveIf ? 'rgba(15,118,110,.22)' : 'rgba(11,18,32,.07)',
-      shadowOffsetY: 2,
+      color: _hypoDotColor(kind, st, selected),
+      borderColor: '#fff',
+      borderWidth: selected ? 2 : 1,
+      shadowBlur: 0,
     },
-    lineStyle: {
-      color: isIf && !isActiveIf ? '#d4d0c6' : '#9dbbb5',
-      width: isActiveIf ? 2 : 1.4,
-    },
+    lineStyle: { color: selected || kind === 'root' ? '#0F766E55' : '#d4d0c6', width: selected ? 1.6 : 1.1 },
   };
 }
 function drawHypothesisIfBar(tree){
@@ -1656,71 +1632,65 @@ function drawHypothesisTree(tree){
   data.collapsed = false;
   const font = 'Pretendard, "Apple SD Gothic Neo", sans-serif';
   _hypoChart.setOption({
-    animationDurationUpdate: 280,
+    animationDurationUpdate: 240,
     tooltip: {
       trigger: 'item',
-      backgroundColor: 'rgba(11,18,32,.92)',
+      backgroundColor: 'rgba(11,18,32,.94)',
       borderWidth: 0,
-      padding: [8, 12],
-      textStyle: { color: '#F3F1EC', fontFamily: font, fontSize: 12 },
+      padding: [10, 14],
+      textStyle: { color: '#F3F1EC', fontFamily: font, fontSize: 12, lineHeight: 18 },
       formatter: p => {
         const id = p.data && (p.data.hypoId || p.data.value);
         const n = _hypoById[id];
         if (!n) return esc(p.name || '');
         const lines = [`<b style="font-size:13px">${esc(n.label)}</b>`];
-        if (n.kind === 'if') lines.push(`지지도 ${n.support_pct}% · 배타적 IF`);
-        else lines.push(`${esc(n.kind)} · ${esc(n.status || 'n/a')}`);
-        if (n.edge) lines.push(`분기 ${esc(n.edge)}`);
+        if (n.detail) lines.push(`<span style="opacity:.9">${esc(n.detail)}</span>`);
+        if (n.kind === 'if') lines.push(`관심 비중 ${n.support_pct}% · 다른 이슈와 동시에 볼 수 있음`);
+        else {
+          const sk = _hypoStatusKo(n);
+          if (sk) lines.push(sk);
+          const ek = _hypoEdgeKo(n);
+          if (ek) lines.push(`연결: ${ek}`);
+        }
+        if ((n.conditions || []).length) {
+          lines.push('<span style="opacity:.7">조건</span> ' + (n.conditions || []).map(c => esc(c.label || c.metric)).join(' · '));
+        }
         return lines.join('<br/>');
       },
     },
     series: [{
       type: 'tree',
       data: [data],
-      top: '6%', left: '2%', bottom: '6%', right: '12%',
+      top: '8%', left: '4%', bottom: '8%', right: '28%',
       orient: 'LR',
       layout: 'orthogonal',
       edgeShape: 'curve',
-      edgeForkPosition: '63%',
-      initialTreeDepth: 3,
-      symbol: 'roundRect',
+      edgeForkPosition: '70%',
+      initialTreeDepth: -1,
+      symbol: 'circle',
       expandAndCollapse: false,
-      roam: false,
+      roam: true,
+      scaleLimit: { min: 0.35, max: 2.4 },
       label: {
-        position: 'inside',
+        position: 'right',
         verticalAlign: 'middle',
-        align: 'center',
+        align: 'left',
+        distance: 10,
         fontFamily: font,
         formatter: p => {
           const d = p.data || {};
-          const kind = d.kind || 'then';
-          const titleKey = kind === 'root' ? 'titleRoot' : 'title';
-          const meta = d.hypoMeta || '';
-          const metaKey = kind === 'root' ? 'metaRoot' : (
-            kind === 'if' ? 'metaIf' :
-            meta.includes('aligned') ? 'metaOk' :
-            meta.includes('diverging') ? 'metaBad' :
-            meta.includes('watching') ? 'metaWatch' : 'meta'
-          );
-          return `{${titleKey}|${d.name || ''}}\n{${metaKey}|${meta}}`;
+          return `{title|${d.name || ''}}\n{meta|${d.hypoMeta || ''}}`;
         },
         rich: {
-          title: { fontSize: 12, fontWeight: 700, lineHeight: 17, color: '#0B1220', fontFamily: font },
-          titleRoot: { fontSize: 12, fontWeight: 700, lineHeight: 17, color: '#F3F1EC', fontFamily: font },
-          meta: { fontSize: 10, fontWeight: 600, lineHeight: 15, color: '#5c6578', fontFamily: font, padding: [2, 0, 0, 0] },
-          metaRoot: { fontSize: 10, fontWeight: 600, lineHeight: 15, color: '#a8b0c0', fontFamily: font, padding: [2, 0, 0, 0] },
-          metaIf: { fontSize: 10, fontWeight: 700, lineHeight: 15, color: '#0F766E', fontFamily: font, padding: [2, 0, 0, 0] },
-          metaOk: { fontSize: 10, fontWeight: 700, lineHeight: 15, color: '#0B8F5A', fontFamily: font, padding: [2, 0, 0, 0] },
-          metaWatch: { fontSize: 10, fontWeight: 700, lineHeight: 15, color: '#c2410c', fontFamily: font, padding: [2, 0, 0, 0] },
-          metaBad: { fontSize: 10, fontWeight: 700, lineHeight: 15, color: '#C23B3B', fontFamily: font, padding: [2, 0, 0, 0] },
+          title: { fontSize: 13, fontWeight: 600, lineHeight: 18, color: '#0B1220', fontFamily: font },
+          meta: { fontSize: 11, fontWeight: 500, lineHeight: 15, color: '#8b93a7', fontFamily: font, padding: [1, 0, 0, 0] },
         },
       },
-      leaves: { label: { position: 'inside', verticalAlign: 'middle', align: 'center', fontFamily: font } },
-      lineStyle: { color: '#9dbbb5', width: 1.5, curveness: 0.35 },
-      emphasis: {
-        focus: 'descendant',
-        itemStyle: { shadowBlur: 16, shadowColor: 'rgba(15,118,110,.2)' },
+      leaves: {
+        label: { position: 'right', verticalAlign: 'middle', align: 'left', distance: 10, fontFamily: font },
       },
+      lineStyle: { color: '#d4d0c6', width: 1.15, curveness: 0.4 },
+      emphasis: { focus: 'descendant', itemStyle: { borderColor: '#0F766E', borderWidth: 2 } },
     }],
   });
   _hypoChart.off('click');
@@ -1729,7 +1699,7 @@ function drawHypothesisTree(tree){
     if (!id || id === 'root') return;
     const n = _hypoById[id];
     if (n && n.kind === 'if') setHypoActiveIf(id);
-    else selectHypoNode(id);
+    else { _hypoSelected = id; selectHypoNode(id); }
   });
   requestAnimationFrame(() => _hypoChart && _hypoChart.resize());
   if (window.ResizeObserver && !el._ro) {
@@ -1742,8 +1712,8 @@ function selectHypoNode(id){
   const n = _hypoById[id];
   const detail = document.getElementById('hypo-detail');
   if (!detail || !n) { if (detail) detail.style.display = 'none'; return; }
-  const metricsSrc = n.watch_metrics
-    || ((_hypoData.tree && _hypoData.tree.watch_metrics) || []);
+  document.querySelectorAll('.hypo-if-chip').forEach(el => el.classList.toggle('on', el.dataset.hid === _hypoActiveIf));
+  const metricsSrc = n.watch_metrics || ((_hypoData.tree && _hypoData.tree.watch_metrics) || []);
   const metrics = (metricsSrc || []).map(m =>
     `<span><b style="color:var(--txt)">${esc(m.label)}</b> ${esc(String(m.value))}</span>`).join('');
   const assump = (n.assumptions || []).map(a => `<li>${esc(a)}</li>`).join('');
@@ -1754,8 +1724,8 @@ function selectHypoNode(id){
       const parts = [];
       if (cur.value != null) parts.push(`값 ${cur.value}`);
       if (cur.change != null) parts.push(`변화 ${cur.change > 0 ? '+' : ''}${cur.change}`);
-      curTxt = parts.length ? ` · 현재 ${parts.join(', ')}` : '';
-    } else if (cur != null) curTxt = ` · 현재 ${cur}`;
+      curTxt = parts.length ? ` · 지금 ${parts.join(', ')}` : '';
+    } else if (cur != null) curTxt = ` · 지금 ${cur}`;
     return `<li>${esc(c.label || c.metric)}${esc(curTxt)}</li>`;
   }).join('');
   const secs = (n.sectors || []).map(s =>
@@ -1768,20 +1738,23 @@ function selectHypoNode(id){
           ? ` <span style="color:var(--dim-2)">${esc([e.source, e.published].filter(Boolean).join(' · '))}</span>`
           : '')
         + `</li>`).join('')}</ul>`
-    : `<div style="color:var(--dim-2);font-size:12px">매칭된 근거 뉴스가 없습니다. (KB 수집·새로고침 후)</div>`;
+    : `<div style="color:var(--dim-2);font-size:12px">아직 연결된 뉴스 링크가 없습니다.</div>`;
+  const sk = _hypoStatusKo(n);
+  const ek = _hypoEdgeKo(n);
   const titleExtra = n.kind === 'if'
-    ? ` · 지지도 ${n.support_pct}%`
-    : _hypoStatusBadge(n.status);
+    ? ` · 관심 ${n.support_pct}%`
+    : (sk ? ` · ${esc(sk)}` : '');
   detail.style.display = '';
   detail.innerHTML = `<div class="hd-title">${esc(n.label)}${titleExtra}
-    <span style="font-size:11px;font-weight:600;color:var(--dim-2);margin-left:6px">${esc(n.kind || '')}${n.edge ? ' · ' + esc(n.edge) : ''}</span></div>
+    <span style="font-size:11px;font-weight:600;color:var(--dim-2);margin-left:6px">${ek ? esc(ek) : ''}</span></div>
+    ${n.detail ? `<p style="margin:0 0 10px;font-size:13px;color:var(--dim);line-height:1.5">${esc(n.detail)}</p>` : ''}
     <div class="hd-metrics">${metrics}</div>
-    ${assump ? `<b style="font-size:12px;color:var(--dim)">가정</b><ul>${assump}</ul>` : ''}
-    ${conds ? `<b style="font-size:12px;color:var(--dim)">확인 조건</b><ul>${conds}</ul>` : ''}
+    ${assump ? `<b style="font-size:12px;color:var(--dim)">쉽게 말하면</b><ul>${assump}</ul>` : ''}
+    ${conds ? `<b style="font-size:12px;color:var(--dim)">지표로 확인</b><ul>${conds}</ul>` : ''}
     <b style="font-size:12px;color:var(--dim)">관심 섹터</b>
     <div class="hc-sectors" style="margin:6px 0 10px">${secs || '–'}</div>
     <b style="font-size:12px;color:var(--dim)">근거 뉴스</b>${ev}
-    <div style="margin-top:8px;font-size:11px;color:var(--dim-2)">지지도 = 배타 IF 간 상대 가중 · then은 조건 상태일 뿐 확률이 아님</div>`;
+    <div style="margin-top:8px;font-size:11px;color:var(--dim-2)">관심 % = 이슈 간 상대 비중 · 예측·투자권유 아님</div>`;
 }
 async function loadHypothesis(){
   const el = document.getElementById('hypo-graph');
@@ -1798,7 +1771,7 @@ async function loadHypothesis(){
       if (ifBar) ifBar.innerHTML = '';
       if (detail) detail.style.display = 'none';
       const hint = _isAdmin
-        ? '위 <b>가설 생성</b>을 누르면 최근 뉴스·KB로 Haiku가 IF 트리를 만듭니다(유료 1회 · 일일 자동 없음).'
+        ? '위 <b>가설 생성</b>을 누르면 Haiku가 최근 뉴스·KB로 이슈 트리를 만듭니다. API 키가 있어야 하며, 실패 시 예전 고정 템플릿으로 채우지 않습니다.'
         : '관리자가 가설을 생성하면 여기에 표시됩니다.';
       el.innerHTML = `<div class="placeholder" style="padding:24px;line-height:1.55">
         ${esc(d.reason || '시황 가설이 아직 없습니다.')}<br/><span style="color:var(--dim)">${hint}</span></div>`;
@@ -1815,14 +1788,12 @@ async function loadHypothesis(){
         || ((d.tree.children || []).sort((a, b) => (b.support_pct || 0) - (a.support_pct || 0))[0] || {}).id;
     }
     if (asof) {
-      const src = d.source === 'llm' ? 'Haiku' : (d.source === 'fallback' ? 'fallback' : (d.source || '캐시'));
-      const modelShort = (d.model || '').includes('haiku') ? 'Haiku' : (d.model ? d.model.split('-').slice(0, 2).join('-') : src);
+      const modelShort = d.source === 'llm' ? 'Haiku' : (d.source || '캐시');
       asof.textContent = `${modelShort} · 수동 · ${d.generated_at || d.as_of || '–'} · DB 저장`
-        + (d.source === 'fallback' ? ' · 템플릿 폴백' : '')
+        + (d.source === 'fallback' ? ' · (옛 폴백 — 다시 생성 권장)' : '')
         + (ctx.cycle_phase ? ` · 사이클 ${ctx.cycle_phase}` : '')
         + (ctx.regime ? ` · 국면 ${ctx.regime}` : '')
-        + (ctx.macro_bias ? ` · 거시 ${ctx.macro_bias}` : '')
-        + ' · 좌→우 · IF 체인 1개만 펼침';
+        + ' · 전체 펼침 · 줌 가능';
     }
     if (disc) disc.textContent = d.disclaimer || '';
     drawHypothesisIfBar(d.tree);
@@ -1840,7 +1811,10 @@ async function refreshHypothesis(){
   try {
     const d = await (await fetch('/api/hypothesis/refresh', { method: 'POST' })).json();
     if (d.ready) { _hypoData = d; _hypoActiveIf = null; await loadHypothesis(); }
-    else alert(d.reason || d.error || '생성 실패');
+    else {
+      alert(d.reason || d.error || '생성 실패');
+      if (d.kept_previous) await loadHypothesis();
+    }
   } catch (e) { alert('생성 요청 실패'); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '가설 생성'; } }
 }
