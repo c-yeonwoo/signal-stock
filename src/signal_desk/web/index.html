@@ -140,7 +140,10 @@
   .sig-quote .q-price { font-size:16px; font-weight:800; color:var(--txt); }
   .sig-quote .q-k { color:var(--dim-2); }
   .sig-chart-pane { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; max-height:calc(100dvh - 200px); }
-  .sig-chart-pane .pane-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
+  .sig-chart-pane .pane-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+  .sig-about { display:none; margin:0 0 8px; font-size:12.5px; color:var(--dim); line-height:1.45; }
+  .sig-about .sa-label { color:var(--dim-2); font-size:11px; font-weight:700; margin-right:6px; }
+  .sig-about .sa-text { color:var(--txt); }
   .sig-chart-pane { overflow-y:auto; }
   #signal-chart { flex:0 0 auto; height:560px; width:100%; }  /* 고정 높이 — flex 성장이면 긴 리스트/stretch에 끌려 차트가 폭발(10000px+)했음. 하단 지표패널 px 고정이라 560이면 종가 패널도 넉넉 */
   /* 차트 아래 상세는 서브탭으로 하나씩 — 차트를 밀어내지 않도록 높이 제한 */
@@ -634,6 +637,7 @@
             <button type="button" data-cm="detail" onclick="setChartMode('detail')">자세히</button>
           </span>
         </div>
+        <div id="signal-about" class="sig-about"></div>
         <div id="signal-hero" style="display:none"></div>
         <p id="chart-mode-hint" class="page-desc" style="display:none;margin:0 0 8px;font-size:12px"></p>
         <div id="signal-chart"></div>
@@ -2419,21 +2423,29 @@ function _paintSignalDetail(ticker, item){
       + (item.valuation_percentile != null
           ? ` <span class="q-k">저평가순위</span> <b style="color:${item.valuation_percentile <= 50 ? 'var(--sig-buy)' : 'var(--dim)'}">상위 ${fmtNum(item.valuation_percentile, 0)}%</b>` : '');
   } else qEl.style.display = 'none';
+  // 종목 개요는 종목명↔히어로 사이 한 줄. 최근 행보·밸류체인은 지표 패널에 유지.
+  const aboutEl = document.getElementById('signal-about');
+  if (aboutEl) {
+    if (item && item.about) {
+      aboutEl.style.display = '';
+      aboutEl.innerHTML = `<span class="sa-label">종목 개요</span><span class="sa-text">${esc(item.about)}</span>`;
+    } else {
+      aboutEl.style.display = 'none';
+      aboutEl.innerHTML = '';
+    }
+  }
   const introEl = document.getElementById('signal-intro');
   const moves = (item && Array.isArray(item.moves)) ? item.moves.filter(Boolean) : [];
-  if (item && (item.about || item.intro || moves.length)) {
+  if (item && (item.intro || moves.length)) {
     introEl.style.display = '';
-    const about = item.about
-      ? `<div style="color:var(--txt);font-size:13px;line-height:1.55"><b style="color:var(--dim);font-size:11px;font-weight:700">종목 개요</b>`
-        + `<div style="margin-top:3px">${esc(item.about)}</div></div>` : '';
     const movesHtml = moves.length
-      ? `<div style="margin-top:7px;font-size:12px;color:var(--dim)"><b style="color:var(--txt)">최근 행보</b>`
+      ? `<div style="font-size:12px;color:var(--dim)"><b style="color:var(--txt)">최근 행보</b>`
         + ` <span style="color:var(--dim-2)">· 사실 요약(신호 아님)</span>`
         + `<ul style="margin:3px 0 0;padding-left:16px;color:var(--txt)">`
         + moves.map(m => `<li style="margin:1px 0">${esc(m)}</li>`).join('') + `</ul></div>` : '';
     const intro = item.intro
-      ? `<div style="margin-top:5px;color:var(--dim)"><b style="color:var(--txt)">${esc(item.intro)}</b>${item.intro_desc ? ' — ' + esc(item.intro_desc) : ''}</div>` : '';
-    introEl.innerHTML = about + movesHtml + intro;
+      ? `<div style="${moves.length ? 'margin-top:5px;' : ''}color:var(--dim)"><b style="color:var(--txt)">${esc(item.intro)}</b>${item.intro_desc ? ' — ' + esc(item.intro_desc) : ''}</div>` : '';
+    introEl.innerHTML = movesHtml + intro;
   } else introEl.style.display = 'none';
   const btEl = document.getElementById('signal-backtest');
   const bt = item && (_isBuy(item.kind) || _isSell(item.kind)) ? _backtestByKind[item.kind] : null;
