@@ -177,6 +177,10 @@
   #chat-panel { position:fixed; right:max(12px, var(--safe-right)); bottom:max(12px, var(--safe-bottom)); width:374px; max-width:calc(100vw - 24px);
     height:520px; max-height:calc(100vh - 40px - var(--safe-bottom)); background:var(--panel); border:1px solid var(--line);
     border-radius:16px; box-shadow:0 10px 40px rgba(15,23,42,.22); z-index:61; display:none; flex-direction:column; overflow:hidden; }
+  /* FAB는 footer 위에 띄움 — footer에 margin/padding을 주면 바닥에서 떠 보임 */
+  body.chat-fab-on #chat-fab { bottom:calc(16px + var(--safe-bottom) + 52px); }
+  body.chat-fab-on #chat-panel { bottom:calc(12px + var(--safe-bottom) + 52px);
+    max-height:calc(100vh - 40px - var(--safe-bottom) - 52px); }
   #chat-grip { height:9px; cursor:ns-resize; flex:0 0 auto; display:flex; align-items:center; justify-content:center; touch-action:none; }
   #chat-grip::before { content:""; width:36px; height:3px; border-radius:3px; background:var(--line-strong); }
   #chat-head { display:flex; align-items:center; gap:7px; padding:8px 14px 12px; border-bottom:1px solid var(--line); background:var(--bg); }
@@ -354,11 +358,9 @@
     border-radius:var(--r-pill); padding:1px 7px; vertical-align:middle; line-height:1.5; }
   .layer-badge.sig { background:var(--accent-weak); color:var(--accent); border:1px solid var(--ring); }
   .layer-badge.ctx { background:var(--bg); color:var(--dim); border:1px solid var(--line-strong); }
-  footer { flex:0 0 auto; margin-top:auto; border-top:1px solid var(--line);
+  footer { flex:0 0 auto; margin-top:auto; margin-bottom:0; border-top:1px solid var(--line);
     padding:12px clamp(16px,3.5vw,44px) calc(12px + var(--safe-bottom)); display:flex;
     gap:18px; flex-wrap:wrap; align-items:center; font-size:12px; color:var(--dim); background:var(--panel); }
-  /* FAB 여백은 footer 밖 margin — 패딩을 키우면 푸터 배경이 두툼해 보임 */
-  body.chat-fab-on footer { margin-bottom:calc(56px + var(--safe-bottom)); }
   footer b { color:var(--txt); }
 
 
