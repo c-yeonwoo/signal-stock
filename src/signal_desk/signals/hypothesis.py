@@ -26,13 +26,20 @@ _DISCLAIMER = (
     "가설·학습용 · 뉴스·KB 핫이슈 · 수동 생성 · 관심 비중(이슈 간 상대) "
     "· 예측·투자권유 아님 · 시그널과 별개 레이어"
 )
+# 노드/UI용 — then·but 직역이 아니라 "이 가정이 지금 데이터와 어떤지"
 _STATUS_KO = {
-    "aligned": "지표가 맞는 중",
-    "watching": "아직 지켜보는 중",
-    "diverging": "지표가 다르게 흐름",
+    "aligned": "지금 이 쪽에 가까움",
+    "watching": "아직 갈림길",
+    "diverging": "지금은 다른 쪽",
     "n/a": "",
 }
-_EDGE_KO = {"if": "이슈", "then": "그러면", "and": "그리고", "but": "그런데"}
+# 상세 패널용 — 트리 연결 의미 (직역 then/but 아님)
+_EDGE_KO = {
+    "if": "이슈",
+    "then": "이 이슈가 이어질 때",
+    "and": "이와 함께 겹칠 때",
+    "but": "반대로 꺾일 때",
+}
 
 _ALLOWED_METRICS = frozenset({
     "NASDAQCOM", "VIXCLS", "CPIAUCSL", "FEDFUNDS", "macro_bias", "regime",

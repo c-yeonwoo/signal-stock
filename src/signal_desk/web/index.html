@@ -736,9 +736,10 @@
         <button type="button" class="btn" id="hypo-refresh-btn" style="display:none;margin-left:10px;padding:3px 10px;font-size:12px"
           onclick="refreshHypothesis()">가설 생성</button>
       </h3>
-      <p class="page-desc">최근 뉴스·KB에서 지금 중요한 <b>거시 이슈</b>(1~4개, 배타적일 필요 없음)와
-        이어질 수 있는 흐름을 왼쪽→오른쪽으로 봅니다. 노드에는 <b>쉬운 말</b>만, 지표·근거는 호버·아래 카드에.
-        <b>관리자 수동 생성</b>(Haiku) 후 DB에 저장됩니다. %는 이슈 간 <b>관심 비중</b>이지 확률이 아닙니다.</p>
+      <p class="page-desc">최근 뉴스·KB에서 지금 중요한 <b>거시 이슈</b>와, 그다음으로 벌어질 수 있는 상황을
+        왼쪽→오른쪽으로 봅니다. 노드 문장은 쉬운 말, 지표·근거는 호버·아래 카드에.
+        노드 아래 작은 글씨는 <b>지금 데이터가 그 가정에 얼마나 가까운지</b>이지, 미래 예고가 아닙니다.
+        <b>관리자 수동 생성</b> 후 DB에 저장됩니다.</p>
       <div id="hypo-asof" style="font-size:11px;color:var(--dim-2);margin:0 0 10px"></div>
       <div id="hypo-if-bar" class="hypo-if-bar"></div>
       <div class="hypo-graph-wrap">
@@ -746,8 +747,8 @@
         <div class="hypo-zoom-hint">휠·핀치로 확대·축소 · 드래그로 이동</div>
       </div>
       <div class="hypo-legend">
-        <span>흐름: 이슈 → 그러면/그런데 → 결과</span>
-        <span>지표가 맞는 중 / 아직 지켜보는 중 / 지표가 다르게 흐름</span>
+        <span>왼쪽→오른쪽: 이슈 → 이어질 수 있는 상황 → 그때 볼 업종</span>
+        <span>작은 글씨: 지금 이 쪽에 가까움 · 아직 갈림길 · 지금은 다른 쪽</span>
       </div>
       <div id="hypo-detail" class="hypo-detail" style="display:none"></div>
       <p id="hypo-disc" style="margin-top:12px;font-size:11px;color:var(--dim-2);line-height:1.5"></p>
@@ -1559,12 +1560,27 @@ function _hypoIndex(node, map){
 }
 function _hypoStatusKo(n){
   return (n && (n.status_ko || '')) || ({
-    aligned: '지표가 맞는 중', watching: '아직 지켜보는 중',
-    diverging: '지표가 다르게 흐름', 'n/a': '',
+    aligned: '지금 이 쪽에 가까움',
+    watching: '아직 갈림길',
+    diverging: '지금은 다른 쪽',
+    'n/a': '',
   })[(n && n.status) || 'n/a'] || '';
 }
 function _hypoEdgeKo(n){
-  return (n && n.edge_ko) || ({ then: '그러면', and: '그리고', but: '그런데', if: '이슈' })[(n && n.edge) || ''] || '';
+  return (n && n.edge_ko) || ({
+    then: '이 이슈가 이어질 때',
+    and: '이와 함께 겹칠 때',
+    but: '반대로 꺾일 때',
+    if: '이슈',
+  })[(n && n.edge) || ''] || '';
+}
+function _hypoStatusHint(st){
+  return ({
+    aligned: '지금 시장·지표가 이 가정 쪽에 더 가깝게 보입니다. 확정·예측이 아닙니다.',
+    watching: '이 가정을 가리키는 신호와 반대 신호가 섞여 있거나, 아직 데이터가 부족합니다.',
+    diverging: '지금 시장·지표는 이 가정과 다르게 움직이고 있습니다. 가정이 틀렸다는 뜻은 아닙니다.',
+    'n/a': '',
+  })[st || 'n/a'] || '';
 }
 function _hypoDotColor(kind, st, selected){
   if (kind === 'root') return '#0B1220';
@@ -1580,10 +1596,9 @@ function _hypoToEcharts(node, activeIf){
   const selected = kind === 'if' && node.id === activeIf;
   const title = String(node.label || node.id);
   let meta = '';
-  if (kind === 'root') meta = '뉴스·KB 기준';
-  else if (kind === 'if') meta = `관심 ${node.support_pct ?? '–'}%`;
-  else if (kind === 'then') meta = [_hypoEdgeKo(node), _hypoStatusKo(node)].filter(Boolean).join(' · ');
-  else if (kind === 'outcome') meta = _hypoStatusKo(node) || '결과';
+  if (kind === 'root') meta = '뉴스·KB로 뽑은 관심사';
+  else if (kind === 'if') meta = `관심 비중 ${node.support_pct ?? '–'}%`;
+  else if (kind === 'then' || kind === 'outcome') meta = _hypoStatusKo(node) || '';
   const kids = (node.children || []).map(c => _hypoToEcharts(c, activeIf));
   const size = kind === 'root' ? 14 : (kind === 'if' ? 12 : 9);
   return {
@@ -1645,15 +1660,18 @@ function drawHypothesisTree(tree){
         if (!n) return esc(p.name || '');
         const lines = [`<b style="font-size:13px">${esc(n.label)}</b>`];
         if (n.detail) lines.push(`<span style="opacity:.9">${esc(n.detail)}</span>`);
-        if (n.kind === 'if') lines.push(`관심 비중 ${n.support_pct}% · 다른 이슈와 동시에 볼 수 있음`);
-        else {
+        if (n.kind === 'if') {
+          lines.push(`관심 비중 ${n.support_pct}% · 이슈는 동시에 볼 수 있음`);
+        } else {
           const sk = _hypoStatusKo(n);
+          const hint = _hypoStatusHint(n.status);
           if (sk) lines.push(sk);
+          if (hint) lines.push(`<span style="opacity:.85">${esc(hint)}</span>`);
           const ek = _hypoEdgeKo(n);
-          if (ek) lines.push(`연결: ${ek}`);
+          if (ek && n.kind === 'then') lines.push(`이 가지는: ${esc(ek)}`);
         }
         if ((n.conditions || []).length) {
-          lines.push('<span style="opacity:.7">조건</span> ' + (n.conditions || []).map(c => esc(c.label || c.metric)).join(' · '));
+          lines.push('<span style="opacity:.7">참고 지표</span> ' + (n.conditions || []).map(c => esc(c.label || c.metric)).join(' · '));
         }
         return lines.join('<br/>');
       },
@@ -1741,20 +1759,27 @@ function selectHypoNode(id){
     : `<div style="color:var(--dim-2);font-size:12px">아직 연결된 뉴스 링크가 없습니다.</div>`;
   const sk = _hypoStatusKo(n);
   const ek = _hypoEdgeKo(n);
+  const hint = _hypoStatusHint(n.status);
   const titleExtra = n.kind === 'if'
-    ? ` · 관심 ${n.support_pct}%`
+    ? ` · 관심 비중 ${n.support_pct}%`
     : (sk ? ` · ${esc(sk)}` : '');
+  const branchLine = (n.kind === 'then' && ek)
+    ? `<p style="margin:0 0 8px;font-size:12px;color:var(--dim)">이 가지는 <b style="color:var(--txt)">${esc(ek)}</b> 보는 갈래입니다.</p>`
+    : '';
+  const statusLine = hint
+    ? `<p style="margin:0 0 10px;font-size:12px;color:var(--dim);line-height:1.5">${esc(hint)}</p>`
+    : '';
   detail.style.display = '';
-  detail.innerHTML = `<div class="hd-title">${esc(n.label)}${titleExtra}
-    <span style="font-size:11px;font-weight:600;color:var(--dim-2);margin-left:6px">${ek ? esc(ek) : ''}</span></div>
+  detail.innerHTML = `<div class="hd-title">${esc(n.label)}${titleExtra}</div>
+    ${branchLine}${statusLine}
     ${n.detail ? `<p style="margin:0 0 10px;font-size:13px;color:var(--dim);line-height:1.5">${esc(n.detail)}</p>` : ''}
     <div class="hd-metrics">${metrics}</div>
     ${assump ? `<b style="font-size:12px;color:var(--dim)">쉽게 말하면</b><ul>${assump}</ul>` : ''}
-    ${conds ? `<b style="font-size:12px;color:var(--dim)">지표로 확인</b><ul>${conds}</ul>` : ''}
+    ${conds ? `<b style="font-size:12px;color:var(--dim)">참고로 보는 지표</b><ul>${conds}</ul>` : ''}
     <b style="font-size:12px;color:var(--dim)">관심 섹터</b>
     <div class="hc-sectors" style="margin:6px 0 10px">${secs || '–'}</div>
     <b style="font-size:12px;color:var(--dim)">근거 뉴스</b>${ev}
-    <div style="margin-top:8px;font-size:11px;color:var(--dim-2)">관심 % = 이슈 간 상대 비중 · 예측·투자권유 아님</div>`;
+    <div style="margin-top:8px;font-size:11px;color:var(--dim-2)">관심 비중 = 이슈 간 상대 · 작은 글씨는 “지금 데이터와 얼마나 가까운지”일 뿐 예측이 아닙니다</div>`;
 }
 async function loadHypothesis(){
   const el = document.getElementById('hypo-graph');
