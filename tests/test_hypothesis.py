@@ -157,13 +157,37 @@ def test_get_uses_v3_cache(monkeypatch, tmp_path):
     assert hypothesis.get()["as_of"] == "2026-07-18"
 
 
-def test_refresh_fallback_when_llm_fails(monkeypatch, tmp_path):
+def test_refresh_fails_without_silent_fallback(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     _stub_macro_cycle(monkeypatch)
-    monkeypatch.setattr(hypothesis, "_llm_draft_templates", lambda: (None, "claude-haiku-test"))
+    monkeypatch.setattr(
+        hypothesis, "_llm_draft_templates",
+        lambda: (None, "claude-haiku-test", "Haiku JSON을 해석하지 못했습니다."),
+    )
     out = hypothesis.refresh()
-    assert out["ready"] and out["source"] == "fallback"
-    assert out["trigger"] == "manual"
+    assert out["ready"] is False
+    assert "Haiku" in out["reason"]
+    assert hypothesis.get()["ready"] is False  # 실패 시 캐시 안 씀
+
+
+def test_validate_allows_single_issue():
+    out = hypothesis._validate_llm_branches({
+        "branches": [{
+            "label": "금리 이야기만 큼",
+            "affinity": "consumer",
+            "sector_keys": ["finance"],
+            "evidence_query": "금리",
+            "detail": "FEDFUNDS",
+            "children": [{
+                "label": "금리가 더 안 오르면",
+                "edge": "then",
+                "conditions": [{"metric": "FEDFUNDS", "op": "chg<=", "threshold": 0, "label": "금리"}],
+                "children": [{"label": "금융·내수를 볼 만함", "sector_keys": ["finance"]}],
+            }],
+        }],
+    })
+    assert out and len(out) == 1
+    assert out[0]["detail"] == "FEDFUNDS"
 
 
 def test_refresh_uses_llm_templates(monkeypatch, tmp_path):
@@ -172,29 +196,30 @@ def test_refresh_uses_llm_templates(monkeypatch, tmp_path):
     fake = hypothesis._validate_llm_branches({
         "branches": [
             {
-                "label": "이슈A", "affinity": "risk_on",
+                "label": "반도체 투자가 이어질까", "affinity": "risk_on",
                 "sector_keys": ["semiconductor"], "evidence_query": "A",
                 "children": [{
-                    "label": "thenA", "edge": "then",
+                    "label": "시장이 안심하면", "edge": "then",
                     "conditions": [{"metric": "VIXCLS", "op": "<", "threshold": 20, "label": "calm"}],
-                    "children": [{"label": "outA", "sector_keys": ["semiconductor"]}],
+                    "children": [{"label": "관련 업종을 눈여겨볼 만함", "sector_keys": ["semiconductor"]}],
                 }],
             },
             {
-                "label": "이슈B", "affinity": "risk_off",
+                "label": "불안이 커질까", "affinity": "risk_off",
                 "sector_keys": ["defense"], "evidence_query": "B",
                 "children": [{
-                    "label": "thenB", "edge": "but",
+                    "label": "변동성이 커지면", "edge": "but",
                     "conditions": [{"metric": "VIXCLS", "op": ">=", "threshold": 25, "label": "fear"}],
-                    "children": [{"label": "outB", "sector_keys": ["defense"]}],
+                    "children": [{"label": "방어 쪽을 볼 만함", "sector_keys": ["defense"]}],
                 }],
             },
         ]
     })
-    monkeypatch.setattr(hypothesis, "_llm_draft_templates", lambda: (fake, "claude-haiku-test"))
+    monkeypatch.setattr(hypothesis, "_llm_draft_templates", lambda: (fake, "claude-haiku-test", None))
     out = hypothesis.refresh()
     assert out["source"] == "llm"
     assert out["model"] == "claude-haiku-test"
+    assert out["tree"]["label"] == "지금 볼 이슈"
     assert len(out["tree"]["children"]) == 2
     assert sum(c["support_pct"] for c in out["tree"]["children"]) == 100
 

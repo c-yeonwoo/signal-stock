@@ -22,9 +22,16 @@ log = logging.getLogger("signal_desk.hypothesis")
 
 _KV_KEY = "hypo:v3:latest"
 _DISCLAIMER = (
-    "가설·학습용 · 뉴스·KB 기반 · 수동 생성 · 지지도(배타 가설 간 상대 가중) · IF 분기 "
+    "가설·학습용 · 뉴스·KB 핫이슈 · 수동 생성 · 관심 비중(이슈 간 상대) "
     "· 예측·투자권유 아님 · 시그널과 별개 레이어"
 )
+_STATUS_KO = {
+    "aligned": "지표가 맞는 중",
+    "watching": "아직 지켜보는 중",
+    "diverging": "지표가 다르게 흐름",
+    "n/a": "",
+}
+_EDGE_KO = {"if": "이슈", "then": "그러면", "and": "그리고", "but": "그런데"}
 
 _ALLOWED_METRICS = frozenset({
     "NASDAQCOM", "VIXCLS", "CPIAUCSL", "FEDFUNDS", "macro_bias", "regime",
@@ -558,20 +565,22 @@ def _build_prompt_bundle() -> dict[str, Any]:
 
 
 def _validate_llm_branches(raw: dict | None) -> list[dict] | None:
+    """핫이슈 1~4개. 배타적일 필요 없음."""
     if not isinstance(raw, dict):
         return None
-    branches = raw.get("branches") or raw.get("ifs") or []
-    if not isinstance(branches, list) or not (2 <= len(branches) <= 4):
+    branches = raw.get("branches") or raw.get("issues") or raw.get("ifs") or []
+    if not isinstance(branches, list) or not (1 <= len(branches) <= 4):
         return None
     out: list[dict] = []
     used_ids: set[str] = set()
     for i, b in enumerate(branches):
         if not isinstance(b, dict):
             continue
-        label = str(b.get("label") or "").strip()[:60]
+        label = str(b.get("label") or b.get("plain") or "").strip()[:48]
         if not label:
             continue
-        bid = _slug(str(b.get("id") or ""), f"if_{i}")
+        detail = str(b.get("detail") or "").strip()[:240]
+        bid = _slug(str(b.get("id") or ""), f"issue_{i}")
         if bid in used_ids:
             bid = f"{bid}_{i}"
         used_ids.add(bid)
@@ -586,7 +595,7 @@ def _validate_llm_branches(raw: dict | None) -> list[dict] | None:
         for j, th in enumerate(children_raw):
             if not isinstance(th, dict):
                 continue
-            tlabel = str(th.get("label") or "").strip()[:80]
+            tlabel = str(th.get("label") or th.get("plain") or "").strip()[:48]
             if not tlabel:
                 continue
             tid = _slug(str(th.get("id") or ""), f"{bid}_then_{j}")
@@ -598,7 +607,7 @@ def _validate_llm_branches(raw: dict | None) -> list[dict] | None:
             for k, oc in enumerate(list(th.get("children") or [])[:1]):
                 if not isinstance(oc, dict):
                     continue
-                olabel = str(oc.get("label") or "").strip()[:80]
+                olabel = str(oc.get("label") or oc.get("plain") or "").strip()[:48]
                 if not olabel:
                     continue
                 oid = _slug(str(oc.get("id") or ""), f"{tid}_out_{k}")
@@ -608,6 +617,7 @@ def _validate_llm_branches(raw: dict | None) -> list[dict] | None:
                     "kind": "outcome",
                     "edge": "then",
                     "label": olabel,
+                    "detail": str(oc.get("detail") or "").strip()[:240],
                     "assumptions": [str(a)[:120] for a in (oc.get("assumptions") or []) if a][:3],
                     "sector_keys": osec,
                     "evidence_query": str(oc.get("evidence_query") or eq)[:120],
@@ -618,7 +628,8 @@ def _validate_llm_branches(raw: dict | None) -> list[dict] | None:
                     "id": f"{tid}_out",
                     "kind": "outcome",
                     "edge": "then",
-                    "label": f"{tlabel} → 관심 섹터",
+                    "label": "관련 업종을 눈여겨볼 만함",
+                    "detail": "",
                     "assumptions": [],
                     "sector_keys": sector_keys[:3],
                     "evidence_query": eq,
@@ -629,6 +640,7 @@ def _validate_llm_branches(raw: dict | None) -> list[dict] | None:
                 "kind": "then",
                 "edge": edge,
                 "label": tlabel,
+                "detail": str(th.get("detail") or "").strip()[:240],
                 "assumptions": [str(a)[:120] for a in (th.get("assumptions") or []) if a][:3],
                 "conditions": tcond,
                 "children": outs,
@@ -638,6 +650,7 @@ def _validate_llm_branches(raw: dict | None) -> list[dict] | None:
         out.append({
             "id": bid,
             "label": label,
+            "detail": detail,
             "edge": "if",
             "assumptions": assumptions or [label],
             "sector_keys": sector_keys,
@@ -645,14 +658,14 @@ def _validate_llm_branches(raw: dict | None) -> list[dict] | None:
             "affinity": affinity,
             "children": children,
         })
-    return out if len(out) >= 2 else None
+    return out if len(out) >= 1 else None
 
 
-def _llm_draft_templates() -> tuple[list[dict] | None, str | None]:
-    """Haiku로 트리 초안. (templates, model) 또는 (None, None)."""
+def _llm_draft_templates() -> tuple[list[dict] | None, str | None, str | None]:
+    """Haiku로 트리 초안. (templates, model, fail_reason)."""
     from signal_desk import llm as llm_mod
     if not llm_mod.available():
-        return None, None
+        return None, None, "ANTHROPIC_API_KEY가 없습니다. 서버 .env를 확인한 뒤 재시작하세요."
     bundle = _build_prompt_bundle()
     sector_list = ", ".join(bundle["sector_keys"])
     kw_line = ", ".join(f"{w}({n})" for w, n in bundle["keywords"][:20])
@@ -660,36 +673,41 @@ def _llm_draft_templates() -> tuple[list[dict] | None, str | None]:
     prev = ", ".join(bundle["prev_labels"]) or "(없음)"
     points = "\n".join(f"- {p}" for p in bundle["macro_points"]) or "(없음)"
     system = (
-        "너는 주식 시황 가설 에디터다. 투자 권유·수익 보장·확률%를 쓰지 마라. "
-        "최근 뉴스·KB를 보고 배타적 IF 시나리오 2~4개와 각 IF 아래 then/but/and 지표 분기, "
-        "outcome(관심 섹터)을 JSON으로만 작성한다. "
-        "IF들은 동시에 성립한다고 읽히면 안 된다(배타적 가설)."
+        "너는 초보 투자자도 읽는 시황 이슈 에디터다. 투자 권유·수익 보장·확률% 금지. "
+        "최근 뉴스·KB에서 '지금 중요한 거시 핫이슈'를 1~4개 고른다. "
+        "이슈들은 서로 배타적일 필요 없다(동시에 관심 가져도 됨). 이슈가 적으면 1~2개만. "
+        "고정 템플릿(AI·CAPEX / 정책·물가·소비 / 리스크오프)을 억지로 쓰지 마라 — 뉴스에 맞게. "
+        "모든 label은 쉬운 한국어 한 줄(전문용어·영문 약어·지표 코드 금지). "
+        "전문용어·지표명·근거 표현은 detail 필드에만. "
+        "각 이슈 아래 그러면/그런데/그리고 분기(then)와 결과(outcome)를 둔다."
     )
     user = (
         f"거시 digest 요약: {bundle['macro_summary'] or '(없음)'}\n"
         f"거시 points:\n{points}\n"
         f"자주 나온 키워드: {kw_line or '(없음)'}\n"
         f"최근 헤드라인:\n{heads or '- (없음)'}\n"
-        f"직전 가설 라벨(참고·중복 피하기): {prev}\n\n"
+        f"직전 이슈 라벨(중복 피하기): {prev}\n\n"
         f"허용 sector_keys: {sector_list}\n"
         f"허용 condition.metric: {', '.join(sorted(_ALLOWED_METRICS))}\n"
         f"허용 condition.op: {', '.join(sorted(_ALLOWED_OPS))}\n"
-        "affinity는 risk_on|consumer|risk_off 중 하나.\n"
-        "각 IF children(then) 1~2개, 각 then의 children(outcome) 정확히 1개.\n"
-        "support_pct/status/확률은 넣지 마라.\n"
-        "JSON 스키마: {\"branches\":[{\"id\",\"label\",\"affinity\",\"assumptions\":[],"
+        "affinity는 risk_on|consumer|risk_off 중 하나(점수용, UI에 안 보임).\n"
+        "각 이슈 children(then) 1~2개, 각 then의 children(outcome) 1개.\n"
+        "edge: then|and|but. support_pct/status/확률 넣지 마라.\n"
+        "JSON: {\"branches\":[{\"id\",\"label\",\"detail\",\"affinity\",\"assumptions\":[],"
         "\"sector_keys\":[],\"evidence_query\",\"children\":[{\"id\",\"kind\":\"then\","
-        "\"edge\":\"then|and|but\",\"label\",\"assumptions\":[],\"conditions\":"
+        "\"edge\",\"label\",\"detail\",\"assumptions\":[],\"conditions\":"
         "[{\"metric\",\"op\",\"threshold\",\"label\"}],\"children\":[{\"id\",\"kind\":\"outcome\","
-        "\"label\",\"assumptions\":[],\"sector_keys\":[],\"evidence_query\"}]}]}]}"
+        "\"label\",\"detail\",\"assumptions\":[],\"sector_keys\":[],\"evidence_query\"}]}]}]}"
     )
     model = llm_mod.DIGEST_MODEL
     raw = llm_mod.complete_json(system, user, max_tokens=3500, model=model)
+    if raw is None:
+        return None, model, "Haiku 호출 실패(응답 없음). 키·네트워크를 확인하세요."
     validated = _validate_llm_branches(raw)
     if not validated:
-        log.warning("hypothesis Haiku JSON 검증 실패")
-        return None, model
-    return validated, model
+        log.warning("hypothesis Haiku JSON 검증 실패: keys=%s", list(raw.keys())[:8])
+        return None, model, "Haiku JSON을 해석하지 못했습니다. 다시 생성해 보세요."
+    return validated, model, None
 
 
 def _build_child_node(
@@ -723,16 +741,20 @@ def _build_child_node(
         )
         for c in (tmpl.get("children") or [])
     ]
+    edge = tmpl.get("edge") or "then"
     return {
         "id": node_id,
         "parent_id": parent_id,
         "kind": kind,
-        "edge": tmpl.get("edge") or "then",
+        "edge": edge,
+        "edge_ko": _EDGE_KO.get(edge, edge),
         "label": tmpl["label"],
+        "detail": tmpl.get("detail") or "",
         "support_pct": None,
         "assumptions": list(tmpl.get("assumptions") or []),
         "conditions": conditions,
         "status": status,
+        "status_ko": _STATUS_KO.get(status, status),
         "current": current,
         "sector_keys": sector_keys,
         "sectors": _sector_nodes(sector_keys),
@@ -809,11 +831,14 @@ def build(*, templates: list[dict] | None = None, store_prices=None, store_macro
             "parent_id": "root",
             "kind": "if",
             "edge": "if",
+            "edge_ko": "이슈",
             "label": t["label"],
+            "detail": t.get("detail") or "",
             "support_pct": 0,
             "assumptions": t.get("assumptions") or [],
             "conditions": [],
             "status": "n/a",
+            "status_ko": "",
             "current": {},
             "sector_keys": t.get("sector_keys") or [],
             "sectors": _sector_nodes(t.get("sector_keys") or []),
@@ -837,11 +862,13 @@ def build(*, templates: list[dict] | None = None, store_prices=None, store_macro
         "parent_id": None,
         "kind": "root",
         "edge": None,
-        "label": "향후 3~6개월 시황 가설",
+        "label": "지금 볼 이슈",
+        "detail": "뉴스·KB 기준으로 뽑아 둔 거시 핫이슈와 이어질 수 있는 흐름",
         "support_pct": 100,
         "assumptions": [],
         "conditions": [],
         "status": "n/a",
+        "status_ko": "",
         "current": {},
         "sectors": [],
         "evidence": [],
@@ -867,14 +894,17 @@ def build(*, templates: list[dict] | None = None, store_prices=None, store_macro
 
 
 def refresh() -> dict:
-    """관리자 수동 전용. Haiku 시도 → 실패 시 폴백 템플릿. kv 저장."""
-    templates, model = _llm_draft_templates()
-    if templates:
-        data = build(templates=templates, source="llm", model=model)
-    else:
-        from signal_desk import llm as llm_mod
-        data = build(templates=_TEMPLATES, source="fallback",
-                     model=model or (llm_mod.DIGEST_MODEL if llm_mod.available() else None))
+    """관리자 수동 전용. Haiku 성공 시에만 kv 저장. 실패 시 기존 캐시 유지 + ready:false."""
+    templates, model, fail = _llm_draft_templates()
+    if not templates:
+        prev = get(build_if_missing=False)
+        return {
+            "ready": False,
+            "reason": fail or "가설 생성에 실패했습니다.",
+            "model": model,
+            "kept_previous": bool(prev.get("ready")),
+        }
+    data = build(templates=templates, source="llm", model=model)
     db.kv_set(_KV_KEY, data)
     return data
 
