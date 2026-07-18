@@ -80,7 +80,9 @@ def test_index_has_trust_and_onboard_ui(tmp_path, monkeypatch):
     # 종목 상세: 종목 개요 + 최근 행보(사실 요약) 블록 + 리스트 슬림/상세 분리
     assert "종목 개요" in html and "최근 행보" in html
     assert "market-bar-end" in html  # 시황 바 오른쪽 슬롯(live·거시토글)
-    assert "body.chat-fab-on footer" in html and "margin-bottom" in html  # FAB 여백≠footer 패딩
+    # FAB는 footer 위에 띄움 — footer margin-bottom으로 바닥에서 띄우지 않음
+    assert "body.chat-fab-on #chat-fab" in html
+    assert "body.chat-fab-on footer" not in html
     assert "/detail?market=" in html  # 클릭 시 상세 병렬 fetch
     assert "_ensureSignalChart" in html  # 차트 DOM 파괴 후 재생성(국내 차트 미표시 방지)
     assert "--c-ma20" in html and "--c-price" in html  # 차트 팔레트 = CSS 변수
