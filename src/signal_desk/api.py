@@ -274,7 +274,7 @@ async def _auth_gate(request: Request, call_next):
 _ADMIN_PATHS = {
     "/api/refresh", "/api/engine/config", "/api/engine/reset", "/api/backtest/analysis",
     "/api/kb/refresh", "/api/kb/import", "/api/kb/import-file", "/api/kb/documents", "/api/kb/digests",
-    "/api/kb/events",
+    "/api/kb/events", "/api/kb/sources",
     "/api/kb/collect-fanding", "/api/kb/collect-outstanding", "/api/kb/collect-youtube", "/api/kb/collect-rss",
     "/api/shortform/generate", "/api/shortform/generate-performance",
     "/api/shortform/queue", "/api/shortform/candidates",
@@ -1835,6 +1835,12 @@ def kb_events_get(ticker: str | None = None, limit: int = 50, active: bool = Fal
         it["evidence"] = db.kb_event_evidence(it["id"])
     return {"items": items, "policy_version": "p0"}
 
+
+@app.get("/api/kb/sources")
+def kb_sources_get(request: Request):
+    """KB 수집 소스 레지스트리(관리자 읽기) — tier·활성·최근 수집 결과."""
+    _admin_or_403(request)
+    return {"sources": db.kb_sources_list(), "policy_version": "p1"}
 
 @app.get("/api/kb/digests")
 def kb_digests_get():
