@@ -150,6 +150,14 @@ def test_build_fallback_tree(monkeypatch, tmp_path):
     assert "status" not in forks[0]
     assert "가정" not in out["disclaimer"]
     assert "검증" not in out["disclaimer"]
+    assert "무게" not in out["disclaimer"]
+    out0 = forks[0]["children"][0]
+    assert out0["kind"] == "outcome"
+    assert out0["children"] and out0["children"][0]["kind"] == "action"
+    assert out0["children"][0]["watch_tickers"]
+    labels = " ".join(c["label"] for c in kids)
+    assert "리스크오프" not in labels
+    assert "risk_off" not in labels.lower()
 
 
 def test_get_no_auto_build(monkeypatch, tmp_path):
