@@ -69,6 +69,24 @@ CREATE TABLE IF NOT EXISTS kb_embeddings(
     dim INTEGER NOT NULL,
     vec BLOB NOT NULL,
     updated INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS kb_sources(
+    source_key TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    source_family TEXT NOT NULL,
+    trust_tier TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    allowed_scopes TEXT NOT NULL DEFAULT '["stock"]',
+    default_doc_class TEXT,
+    decision_event_mode TEXT NOT NULL DEFAULT 'none',
+    config_ref TEXT,
+    last_collected_at INTEGER,
+    last_result TEXT,
+    last_error TEXT,
+    accepted_count INTEGER NOT NULL DEFAULT 0,
+    pending_count INTEGER NOT NULL DEFAULT 0,
+    rejected_count INTEGER NOT NULL DEFAULT 0,
+    created INTEGER NOT NULL,
+    updated INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS kb_events(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_key TEXT NOT NULL UNIQUE,
@@ -153,7 +171,8 @@ def _migrate(c: sqlite3.Connection) -> None:
         c.execute("ALTER TABLE kb_entries ADD COLUMN status TEXT NOT NULL DEFAULT 'confirmed'")
     if "scenes" not in {r[1] for r in c.execute("PRAGMA table_info(shortform)").fetchall()}:
         c.execute("ALTER TABLE shortform ADD COLUMN scenes TEXT")  # 장면 시퀀스(인트로+근거별 프레임) JSON
-    # kb_embeddings는 _SCHEMA CREATE IF NOT EXISTS로 충분(신규 테이블)
+    # kb_embeddings·kb_sources·kb_events는 _SCHEMA CREATE IF NOT EXISTS로 충분
+    _seed_kb_sources(c)
     c.commit()
     # 일회성: 기존 raw_text 절단 + VACUUM(파일 회수). conn()이 매번 _migrate를 돌므로 kv 플래그로 1회만.
     # kv_get()은 conn()을 다시 열어 재귀되므로 여기선 c로 직접 조회한다.
@@ -687,6 +706,114 @@ def kb_digests_all() -> dict[str, dict]:
     rows = c.execute(f"SELECT {_KB_COLS} FROM kb_digest").fetchall()
     c.close()
     return {r[0]: _kb_row(r) for r in rows}
+
+
+# ---------- kb_sources (수집 소스 레지스트리 — P1 ingest gate) ----------
+_KB_SOURCE_SEEDS = (
+    # source_key, display_name, family, trust_tier, scopes_json, doc_class, decision_event_mode
+    ("dart", "DART 공시", "dart", "official", '["stock"]', "공시", "rule_official"),
+    ("naver_news", "네이버 증권 뉴스", "naver_news", "medium", '["stock"]', "뉴스", "none"),
+    ("youtube", "유튜브(화이트리스트)", "youtube", "medium", '["market"]', "시황", "none"),
+    ("rss", "해외 전문가 RSS", "rss", "high", '["market"]', "시황", "none"),
+    ("fanding", "미주은(fanding)", "fanding", "high", '["stock","market"]', "시황", "none"),
+    ("outstanding", "아웃스탠딩", "outstanding", "high", '["stock","market"]', "시황", "none"),
+    ("manual", "관리자 수동 업로드", "manual", "high", '["stock","sector","market"]', "리포트", "none"),
+)
+
+
+def _seed_kb_sources(c: sqlite3.Connection) -> None:
+    """패밀리 소스 멱등 시드 — 기존 행의 enabled/카운터는 덮지 않음."""
+    now = int(time.time())
+    for key, name, fam, tier, scopes, dclass, mode in _KB_SOURCE_SEEDS:
+        c.execute(
+            "INSERT INTO kb_sources(source_key,display_name,source_family,trust_tier,enabled,"
+            "allowed_scopes,default_doc_class,decision_event_mode,created,updated) "
+            "VALUES(?,?,?,?,1,?,?,?,?,?) "
+            "ON CONFLICT(source_key) DO UPDATE SET "
+            "display_name=excluded.display_name, source_family=excluded.source_family, "
+            "trust_tier=excluded.trust_tier, allowed_scopes=excluded.allowed_scopes, "
+            "default_doc_class=excluded.default_doc_class, "
+            "decision_event_mode=excluded.decision_event_mode, updated=excluded.updated",
+            (key, name, fam, tier, scopes, dclass, mode, now, now),
+        )
+
+
+_SRC_COLS = (
+    "source_key,display_name,source_family,trust_tier,enabled,allowed_scopes,default_doc_class,"
+    "decision_event_mode,config_ref,last_collected_at,last_result,last_error,"
+    "accepted_count,pending_count,rejected_count,created,updated"
+)
+
+
+def _src_row(r) -> dict:
+    d = dict(zip(_SRC_COLS.split(","), r))
+    d["enabled"] = bool(d.get("enabled"))
+    try:
+        d["allowed_scopes"] = json.loads(d.get("allowed_scopes") or "[]")
+    except Exception:
+        d["allowed_scopes"] = []
+    return d
+
+
+def kb_source_get(source_key: str) -> dict | None:
+    c = conn()
+    row = c.execute(f"SELECT {_SRC_COLS} FROM kb_sources WHERE source_key=?", (source_key,)).fetchone()
+    c.close()
+    return _src_row(row) if row else None
+
+
+def kb_sources_list() -> list[dict]:
+    c = conn()
+    rows = c.execute(
+        f"SELECT {_SRC_COLS} FROM kb_sources ORDER BY "
+        "CASE trust_tier WHEN 'official' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, "
+        "source_key"
+    ).fetchall()
+    c.close()
+    return [_src_row(r) for r in rows]
+
+
+def kb_source_ensure(source_key: str, *, display_name: str | None = None,
+                     parent_key: str | None = None) -> dict | None:
+    """소스 조회·없으면 생성. parent_key면 패밀리 tier/정책을 상속(채널·피드 lazy upsert)."""
+    existing = kb_source_get(source_key)
+    if existing:
+        return existing
+    now = int(time.time())
+    parent = kb_source_get(parent_key) if parent_key else None
+    if parent:
+        fam, tier = parent["source_family"], parent["trust_tier"]
+        scopes = json.dumps(parent.get("allowed_scopes") or ["market"], ensure_ascii=False)
+        dclass = parent.get("default_doc_class")
+        mode = parent.get("decision_event_mode") or "none"
+        name = display_name or source_key
+    else:
+        return None
+    c = conn()
+    c.execute(
+        "INSERT OR IGNORE INTO kb_sources(source_key,display_name,source_family,trust_tier,enabled,"
+        "allowed_scopes,default_doc_class,decision_event_mode,created,updated) "
+        "VALUES(?,?,?,?,1,?,?,?,?,?)",
+        (source_key, name, fam, tier, scopes, dclass, mode, now, now),
+    )
+    c.commit()
+    c.close()
+    return kb_source_get(source_key)
+
+
+def kb_sources_touch(source_key: str, result: str, *, error: str | None = None,
+                     accepted: int = 0, pending: int = 0, rejected: int = 0) -> None:
+    """수집 결과 카운터·시각 갱신."""
+    now = int(time.time())
+    c = conn()
+    c.execute(
+        "UPDATE kb_sources SET last_collected_at=?, last_result=?, last_error=?,"
+        "accepted_count=accepted_count+?, pending_count=pending_count+?, "
+        "rejected_count=rejected_count+?, updated=? WHERE source_key=?",
+        (now, result, (error or "")[:240] or None, accepted, pending, rejected, now, source_key),
+    )
+    c.commit()
+    c.close()
 
 
 # ---------- kb_events (구조화 이벤트 카드 — Decision 입력) ----------

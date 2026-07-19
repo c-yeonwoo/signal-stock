@@ -1171,6 +1171,8 @@
       <div class="seg-toggle" id="kb-view-seg" style="margin-bottom:10px">
         <button class="on" data-kbview="digest" onclick="setKbView('digest')">종목별 요약(시그널이 쓰는 것)</button>
         <button data-kbview="docs" onclick="setKbView('docs')">원문 문서</button>
+        <button data-kbview="events" onclick="setKbView('events')">결정 이벤트</button>
+        <button data-kbview="sources" onclick="setKbView('sources')">소스</button>
       </div>
       <p class="page-desc" id="kb-view-desc" style="margin:0 0 8px"></p>
       <div id="kbdoc-filters" class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
@@ -4356,6 +4358,70 @@ function setKbView(v){
   document.getElementById('kbdoc-filters').style.display = (v === 'docs') ? '' : 'none';
   loadKbDocs();
 }
+function _kbFmtTs(ep){
+  if (!ep) return '–';
+  const dt = new Date(ep * 1000), p = (n) => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())} ${p(dt.getHours())}:${p(dt.getMinutes())}`;
+}
+async function loadKbEvents(){
+  const el = document.getElementById('kbdoc-body'), fEl = document.getElementById('kbdoc-filters');
+  fEl.innerHTML = '';
+  document.getElementById('kb-view-desc').innerHTML =
+    '구조화 <b>결정 이벤트</b>(DART 공시 등). Decision 입력용이며 <b>점수 가산 없음</b>. '
+    + 'eligible=의사결정 반영 · 근거 URL이 있는 confirmed만.';
+  try {
+    const d = await (await fetch('/api/kb/events?active=true')).json();
+    const items = d.items || [];
+    if (!items.length) {
+      el.className = '';
+      el.innerHTML = '<div class="placeholder" style="padding:16px 0">활성 이벤트가 없습니다 — KB 뉴스 갱신 후 DART 공시가 쌓입니다.</div>';
+      return;
+    }
+    const sevColor = { critical: 'var(--sig-sell)', serious: '#c2410c', watch: 'var(--dim)', info: 'var(--dim-2)' };
+    const rows = items.map(ev => {
+      const evd = (ev.evidence || [])[0];
+      const link = evd && evd.url
+        ? `<a href="${esc(evd.url)}" target="_blank" rel="noopener">${esc((ev.summary || '').slice(0, 72))}</a>`
+        : esc((ev.summary || '').slice(0, 72));
+      return `<tr style="vertical-align:top">
+        <td><span style="font-weight:700;color:${sevColor[ev.severity] || 'var(--dim)'}">${esc(ev.severity || '')}</span>
+          <div style="font-size:10px;color:var(--dim)">${ev.decision_eligible ? 'eligible' : '표시만'}</div></td>
+        <td>${esc(ev.ticker || '–')}<div style="font-size:11px;color:var(--dim)">${esc(ev.decision_action || 'none')} · ${esc(ev.trust_tier || '')}</div></td>
+        <td style="white-space:normal">${link}
+          <div style="font-size:11px;color:var(--dim)">${esc(ev.event_type || '')} · ${_kbFmtTs(ev.detected_at)}</div></td>
+      </tr>`;
+    }).join('');
+    el.className = '';
+    el.innerHTML = `<table class="dtable"><thead><tr><th>심각도</th><th>종목</th><th>요약·근거</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch (e) { el.textContent = '불러오지 못했습니다.'; }
+}
+async function loadKbSources(){
+  const el = document.getElementById('kbdoc-body'), fEl = document.getElementById('kbdoc-filters');
+  fEl.innerHTML = '';
+  document.getElementById('kb-view-desc').innerHTML =
+    '수집 <b>소스 레지스트리</b>. 비활성이면 ingest gate에서 거절. '
+    + 'Decision 이벤트는 <code>rule_official</code>(DART)만 자동 생성. 채널·피드는 수집 시 lazy 등록.';
+  try {
+    const d = await (await fetch('/api/kb/sources')).json();
+    const srcs = d.sources || [];
+    if (!srcs.length) {
+      el.className = '';
+      el.innerHTML = '<div class="placeholder" style="padding:16px 0">소스가 없습니다.</div>';
+      return;
+    }
+    const rows = srcs.map(s => `<tr style="vertical-align:top">
+      <td><b>${esc(s.display_name || s.source_key)}</b>
+        <div style="font-size:11px;color:var(--dim)">${esc(s.source_key)}</div></td>
+      <td>${esc(s.trust_tier || '')}<div style="font-size:11px;color:var(--dim)">${esc(s.decision_event_mode || 'none')}</div></td>
+      <td>${s.enabled ? '<span style="color:var(--sig-buy);font-weight:700">ON</span>' : '<span style="color:var(--sig-sell)">OFF</span>'}
+        <div style="font-size:11px;color:var(--dim)">수락 ${s.accepted_count || 0} · 보류 ${s.pending_count || 0} · 거절 ${s.rejected_count || 0}</div></td>
+      <td style="font-size:11px;color:var(--dim)">${esc(s.last_result || '–')}<div>${_kbFmtTs(s.last_collected_at)}</div>
+        ${s.last_error ? `<div style="color:var(--sig-sell)">${esc(s.last_error)}</div>` : ''}</td>
+    </tr>`).join('');
+    el.className = '';
+    el.innerHTML = `<table class="dtable"><thead><tr><th>소스</th><th>tier</th><th>상태</th><th>최근 수집</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch (e) { el.textContent = '불러오지 못했습니다.'; }
+}
 
 async function loadKbDigests(){
   const el = document.getElementById('kbdoc-body'), fEl = document.getElementById('kbdoc-filters');
@@ -4407,6 +4473,8 @@ async function openKbDigest(ticker){
 
 async function loadKbDocs(){
   if (_kbView === 'digest') return loadKbDigests();
+  if (_kbView === 'events') return loadKbEvents();
+  if (_kbView === 'sources') return loadKbSources();
   const el = document.getElementById('kbdoc-body'), fEl = document.getElementById('kbdoc-filters');
   document.getElementById('kb-view-desc').innerHTML =
     '수집된 <b>원문 문서</b> 목록입니다(각 소스 1건 = 1행, 원문 보관). 아래 요약은 이들을 종합해 만듭니다.';

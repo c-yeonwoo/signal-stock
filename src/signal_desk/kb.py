@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import re
 import time
 
 from signal_desk import config, db, llm
@@ -19,6 +20,10 @@ from signal_desk.ingest import dart as ingest_dart
 from signal_desk.ingest import news
 
 log = logging.getLogger("signal_desk.kb")
+
+
+def _source_slug(s: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9._-]+", "_", (s or "").strip())[:64] or "x"
 
 _POS = ["상승", "급등", "호재", "최대", "돌파", "수주", "흑자", "개선", "성장", "신고가", "강세", "기대", "수혜"]
 _NEG = ["하락", "급락", "악재", "부진", "적자", "감소", "우려", "리콜", "제재", "약세", "손실", "하향", "경고"]
@@ -167,7 +172,9 @@ def validate_import(ticker: str, name: str, text: str, title: str = "", trusted:
 
 
 def import_document(ticker: str, name: str, title: str, text: str,
-                    source_type: str = "report", url: str = "", published: str = "") -> dict:
+                    source_type: str = "report", url: str = "", published: str = "",
+                    *, source_key: str | None = None, display_name: str | None = None,
+                    parent_key: str | None = None) -> dict:
     """증권사 리포트·원문 텍스트 → 신뢰성 검증 → 통과분만 KB 반영. 반환: {ok, status, doc_class, summary, trust, reasons}.
     accept=confirmed(시그널 반영) · review=pending(보류, 미반영) · reject=미저장. published=발행일(freshness)."""
     text = (text or "").strip()
@@ -180,12 +187,22 @@ def import_document(ticker: str, name: str, title: str, text: str,
     status = "confirmed" if v["verdict"] == "accept" else "pending"
     doc_class = classify_document({"title": title, "summary": text[:500]}, source_type)
     summary, points = _summarize_text(name, title, text)
-    db.kb_document_add(ticker, title or f"{name} {source_type}", summary, url,
-                       source_type, published, doc_class, raw_text=text, status=status)
+    sk = source_key or ("fanding" if source_type == "insight" else "manual")
+    parent = parent_key or (sk.split(":", 1)[0] if ":" in sk else None)
+    gate = ingest_document(
+        source_key=sk, ticker=ticker, title=title or f"{name} {source_type}",
+        summary=summary, url=url, published=published, doc_class=doc_class,
+        raw_text=text, status=status, scope="stock", entry_source=source_type,
+        display_name=display_name, parent_key=parent if parent and parent != sk else None,
+    )
+    if not gate.get("ok"):
+        return {"ok": False, "reason": gate.get("reason", "소스 게이트 거절"),
+                "verdict": v["verdict"], "trust": v["trust"], "reasons": v["reasons"]}
     if status == "confirmed":
         _rebuild_digest(ticker, name)  # confirmed만 다이제스트에 반영
     return {"ok": True, "status": status, "verdict": v["verdict"], "trust": v["trust"],
-            "reasons": v["reasons"], "doc_class": doc_class, "summary": summary}
+            "reasons": v["reasons"], "doc_class": doc_class, "summary": summary,
+            "source_key": sk}
 
 
 def _summarize_text(name: str, title: str, text: str) -> tuple[str, list[str]]:
@@ -275,6 +292,90 @@ def validate_macro(text: str, title: str = "") -> dict:
             "reasons": [str(r) for r in (out.get("reasons") or [])][:3]}
 
 
+# ---------- P1 ingest gate (source registry) ----------
+def _resolve_source(source_key: str, *, display_name: str | None = None,
+                    parent_key: str | None = None) -> dict | None:
+    src = db.kb_source_get(source_key)
+    if src:
+        return src
+    if parent_key:
+        return db.kb_source_ensure(source_key, display_name=display_name, parent_key=parent_key)
+    return None
+
+
+def _source_allows(src: dict | None, scope: str) -> tuple[bool, str]:
+    if not src:
+        return False, "등록되지 않은 소스"
+    if not src.get("enabled"):
+        return False, f"비활성 소스({src.get('source_key')})"
+    scopes = src.get("allowed_scopes") or []
+    if scopes and scope not in scopes:
+        return False, f"scope '{scope}' 미허용"
+    return True, ""
+
+
+def _legacy_store_source(family: str, *, entry_source: str | None = None) -> str:
+    """kb_entries.source 레거시 값 — prune/증분 URL 집합 호환."""
+    if entry_source:
+        return entry_source
+    if family in ("youtube", "rss", "fanding", "outstanding"):
+        return "insight"
+    if family == "manual":
+        return "report"
+    return family
+
+
+def ingest_document(*, source_key: str, ticker: str, title: str, summary: str,
+                    url: str = "", published: str = "", doc_class: str = "",
+                    raw_text: str | None = None, status: str = "confirmed",
+                    scope: str = "stock", parent_key: str | None = None,
+                    display_name: str | None = None,
+                    entry_source: str | None = None) -> dict:
+    """공통 적재 게이트 — registry 활성·scope 확인 후 저장. Decision 이벤트는 만들지 않음."""
+    src = _resolve_source(source_key, display_name=display_name, parent_key=parent_key)
+    ok, why = _source_allows(src, scope)
+    touch_key = source_key if src else (parent_key or source_key)
+    if not ok:
+        if db.kb_source_get(touch_key):
+            db.kb_sources_touch(touch_key, "rejected", error=why, rejected=1)
+        return {"ok": False, "reason": why, "source_key": source_key}
+    leg = _legacy_store_source(src["source_family"], entry_source=entry_source)
+    dclass = doc_class or src.get("default_doc_class") or "뉴스"
+    eid = db.kb_document_add(
+        ticker, title, summary, url, leg, published, dclass,
+        raw_text=raw_text, status=status,
+    )
+    db.kb_sources_touch(
+        source_key, "ok",
+        accepted=1 if status == "confirmed" else 0,
+        pending=1 if status == "pending" else 0,
+    )
+    return {"ok": True, "entry_id": eid, "status": status, "source_key": source_key,
+            "trust_tier": src.get("trust_tier")}
+
+
+def ingest_stock_batch(ticker: str, items: list[dict]) -> int:
+    """종목 뉴스·공시 배치 — item.source(dart|naver_news|…)별 registry 게이트 후 add_many.
+    레거시 digest veto(detect_event)는 유지. Decision eligible 이벤트는 DART sync만."""
+    allowed, counts = [], {}
+    for it in items:
+        raw_src = (it.get("source") or "naver_news").strip()
+        sk = "dart" if raw_src == "dart" else "naver_news"
+        src = db.kb_source_get(sk)
+        ok, why = _source_allows(src, "stock")
+        if not ok:
+            if src:
+                db.kb_sources_touch(sk, "rejected", error=why, rejected=1)
+            continue
+        row = {**it, "source": "dart" if sk == "dart" else (raw_src or "naver_news")}
+        allowed.append(row)
+        counts[sk] = counts.get(sk, 0) + 1
+    n = db.kb_entry_add_many(ticker, allowed) if allowed else 0
+    for sk, cnt in counts.items():
+        db.kb_sources_touch(sk, "ok", accepted=cnt)
+    return n
+
+
 def import_file(ticker: str | None, name: str, filename: str, data: bytes, media_type: str) -> dict:
     """업로드 파일(PDF/이미지)을 KB 문서로. 텍스트 PDF는 pypdf로 싸게, 스캔·이미지는 vision(OCR)으로 인식.
     ticker가 없으면 문서 내용을 이해해 종목/시황/섹터로 자동 분류·라우팅한다(종목 특정 시 종목 KB, 아니면
@@ -308,8 +409,13 @@ def import_file(ticker: str | None, name: str, filename: str, data: bytes, media
                         "reason": "KB 오염 우려로 저장하지 않음: " + (", ".join(vm["reasons"]) or "신뢰도 낮음")}
             is_sector = sc["scope"] == "sector" and sc.get("sector")
             label = (f"[섹터: {sc['sector']}] {title}" if is_sector else f"[시황] {title}")
-            db.kb_document_add(MACRO_TICKER, label, summary, "", "upload", "", "시황",
-                               raw_text=raw, status="confirmed")
+            gate = ingest_document(
+                source_key="manual", ticker=MACRO_TICKER, title=label, summary=summary,
+                url="", published="", doc_class="시황", raw_text=raw, status="confirmed",
+                scope="market", entry_source="upload",
+            )
+            if not gate.get("ok"):
+                return {"ok": False, "reason": gate.get("reason"), "method": method}
             _rebuild_macro_digest()
             return {"ok": True, "status": "confirmed", "method": method,
                     "routed": "sector" if is_sector else "market",
@@ -324,7 +430,14 @@ def import_file(ticker: str | None, name: str, filename: str, data: bytes, media
                 "reason": "KB 오염 우려로 저장하지 않음: " + (", ".join(v["reasons"]) or "신뢰도 낮음")}
     status = "confirmed" if v["verdict"] == "accept" else "pending"
     doc_class = classify_document({"title": title, "summary": summary}, "report")
-    db.kb_document_add(ticker, title, summary, "", "upload", "", doc_class, raw_text=raw, status=status)
+    gate = ingest_document(
+        source_key="manual", ticker=ticker, title=title, summary=summary,
+        url="", published="", doc_class=doc_class, raw_text=raw, status=status,
+        scope="stock", entry_source="upload",
+    )
+    if not gate.get("ok"):
+        return {"ok": False, "reason": gate.get("reason"), "method": method,
+                "verdict": v["verdict"], "trust": v["trust"]}
     if status == "confirmed":
         _rebuild_digest(ticker, name)
     return {"ok": True, "status": status, "verdict": v["verdict"], "trust": v["trust"],
@@ -568,19 +681,29 @@ def build_digest(name: str, items: list[dict]) -> dict:
 
 
 def import_macro(title: str, text: str, url: str = "", published: str = "", summary: str = "",
-                 rebuild: bool = True) -> dict:
+                 rebuild: bool = True, *, source_key: str = "rss",
+                 display_name: str | None = None, parent_key: str | None = None) -> dict:
     """시황·거시 내러티브(단일 종목 특정 불가)를 거시 KB(_MARKET)에 적재한다.
     개별 종목 검증(종목명 언급)은 적용하지 않되, 너무 짧은 글은 배제. 저장 후 거시 다이제스트 갱신.
     summary가 주어지면 다이제스트용 요약으로 쓴다(긴 자막 등은 미리 LLM 요약해 넘김). text=원문(raw).
-    rebuild=False면 다이제스트 재계산을 건너뛴다(다건 배치 수집 시 끝에 1회만 재계산하기 위함)."""
+    rebuild=False면 다이제스트 재계산을 건너뛴다(다건 배치 수집 시 끝에 1회만 재계산하기 위함).
+    source_key/parent_key로 P1 registry 게이트를 통과한다."""
     text = (text or "").strip()
     if len(text) < 40:
         return {"ok": False, "reason": "본문이 너무 짧아 시황 KB에 저장하지 않음"}
-    db.kb_document_add(MACRO_TICKER, title or "시황", (summary or text)[:400], url, "insight",
-                       published, "시황", raw_text=text, status="confirmed")
+    parent = parent_key or (source_key.split(":", 1)[0] if ":" in source_key else source_key)
+    gate = ingest_document(
+        source_key=source_key, ticker=MACRO_TICKER, title=title or "시황",
+        summary=(summary or text)[:400], url=url, published=published, doc_class="시황",
+        raw_text=text, status="confirmed", scope="market",
+        parent_key=parent if source_key != parent else None,
+        display_name=display_name, entry_source="insight",
+    )
+    if not gate.get("ok"):
+        return {"ok": False, "reason": gate.get("reason", "소스 게이트 거절")}
     if rebuild:
         _rebuild_macro_digest()
-    return {"ok": True, "status": "confirmed", "doc_class": "시황"}
+    return {"ok": True, "status": "confirmed", "doc_class": "시황", "source_key": source_key}
 
 
 def _macro_source_summary(title: str, text: str) -> str:
@@ -633,7 +756,9 @@ def collect_youtube(max_per_channel: int | None = None, force: bool = False) -> 
                 continue
             pub = v.get("published") or ""
             summary = _macro_source_summary(title, raw)  # 긴 자막은 LLM 요약, 원문은 raw 보관
-            r = import_macro(f"[{channel}] {title}", raw, url=url, published=pub, summary=summary)
+            sk = f"youtube:{_source_slug(handle)}"
+            r = import_macro(f"[{channel}] {title}", raw, url=url, published=pub, summary=summary,
+                             source_key=sk, display_name=f"YouTube @{handle}", parent_key="youtube")
             if r.get("ok"):
                 macro.append({"channel": channel, "title": title, "published": pub, "chars": len(raw)})
             else:
@@ -675,8 +800,10 @@ def collect_rss_macro(force: bool = False, limit_per_feed: int | None = None) ->
                 skipped.append({"title": title, "why": "본문 짧음"})
                 continue
             summary = _macro_source_summary(title, raw)  # 영문→한국어 시장관점 요약(LLM)
+            sk = f"rss:{_source_slug(name)}"
             r = import_macro(f"[{name}] {title}", raw, url=link, published=e.get("published", ""),
-                             summary=summary, rebuild=False)
+                             summary=summary, rebuild=False,
+                             source_key=sk, display_name=name, parent_key="rss")
             if r.get("ok"):
                 macro.append({"feed": name, "title": title, "published": e.get("published", "")})
                 if link:
@@ -750,7 +877,7 @@ def refresh(targets: list[dict], news_n: int = 8, lookback_days: int = 7) -> dic
         for it in items:  # 문서 유형 분류(공시는 이미 지정됨 → 뉴스만 분류)
             if not it.get("doc_class"):
                 it["doc_class"] = classify_document(it, "news")
-        db.kb_entry_add_many(ticker, items)
+        ingest_stock_batch(ticker, items)  # P1: source registry 게이트
         sync_disclosure_events(ticker, disc)  # P0: 구조화 이벤트 카드(공식 공시)
         digest = build_digest(name, items)
         # digest 플래그는 레거시·폴백 — Decision은 active event 우선(sentiment_map)
@@ -876,14 +1003,16 @@ def collect_fanding(limit: int = 20, force: bool = False, backfill_days: int = 0
         if hit:
             tk, ko, en = hit
             res = import_document(tk, en, detail["title"], detail["content"],
-                                  source_type="insight", url=detail["url"], published=pub)
+                                  source_type="insight", url=detail["url"], published=pub,
+                                  source_key="fanding", display_name="미주은(fanding)")
             if res.get("ok"):
                 imported.append({"ticker": tk, "name": ko, "title": detail["title"],
                                  "status": res["status"], "trust": res.get("trust"), "published": pub})
             else:
                 skipped.append({"post_no": post.get("post_no"), "title": title, "why": res.get("reason", "미저장")})
         else:  # 종목 불특정 → 시황·거시 내러티브로 적재
-            res = import_macro(detail["title"], detail["content"], url=detail["url"], published=pub)
+            res = import_macro(detail["title"], detail["content"], url=detail["url"], published=pub,
+                               source_key="fanding", display_name="미주은(fanding)")
             if res.get("ok"):
                 macro.append({"title": detail["title"], "published": pub})
             else:
@@ -928,12 +1057,18 @@ def collect_outstanding(item_per_page: int = 50, force: bool = False) -> dict:
             hit = next(((tk, ko, en) for ko, tk, en in index if ko in title), None)
             if hit:
                 tk, ko, en = hit
-                r = import_document(tk, en, title, body, source_type="insight", url=url, published=pub)
+                sk = f"outstanding:{_source_slug(login_id)}"
+                r = import_document(tk, en, title, body, source_type="insight", url=url, published=pub,
+                                    source_key=sk, display_name=f"아웃스탠딩 · {author}",
+                                    parent_key="outstanding")
                 (imported if r.get("ok") else skipped).append(
                     {"ticker": tk, "name": ko, "title": title, "why": r.get("reason")} if not r.get("ok")
                     else {"ticker": tk, "name": ko, "title": title, "status": r["status"], "published": pub})
             else:  # 거시·산업 내러티브 — 작가 attribution 유지
-                r = import_macro(f"[{author}] {title}", body, url=url, published=pub)
+                sk = f"outstanding:{_source_slug(login_id)}"
+                r = import_macro(f"[{author}] {title}", body, url=url, published=pub,
+                                 source_key=sk, display_name=f"아웃스탠딩 · {author}",
+                                 parent_key="outstanding")
                 if r.get("ok"):
                     macro.append({"author": author, "title": title, "published": pub})
                 else:
