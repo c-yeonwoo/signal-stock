@@ -4436,32 +4436,65 @@ async function loadKbEvents(){
     el.innerHTML = `<table class="dtable"><thead><tr><th>심각도</th><th>종목</th><th>요약·근거</th></tr></thead><tbody>${rows}</tbody></table>`;
   } catch (e) { el.textContent = '불러오지 못했습니다.'; }
 }
+let _kbSrcFilter = '';
 async function loadKbSources(){
   const el = document.getElementById('kbdoc-body'), fEl = document.getElementById('kbdoc-filters');
-  fEl.innerHTML = '';
+  fEl.style.display = '';
   document.getElementById('kb-view-desc').innerHTML =
-    '수집 <b>소스 레지스트리</b>. 비활성이면 ingest gate에서 거절. '
-    + 'Decision 이벤트는 <code>rule_official</code>(DART)만 자동 생성. 채널·피드는 수집 시 lazy 등록.';
+    '수집 <b>소스 레지스트리</b>. 채널·피드는 <b>수습(probation)</b> 후 품질이 낮으면 <b>퇴출후보</b>로 올리고 수집을 멈춥니다. '
+    + '자동 비활성화는 없고, 관리자가 퇴출 확정/유지/고정을 선택합니다.';
   try {
-    const d = await (await fetch('/api/kb/sources')).json();
+    const q = _kbSrcFilter ? ('?lifecycle=' + encodeURIComponent(_kbSrcFilter)) : '';
+    const d = await (await fetch('/api/kb/sources' + q)).json();
+    const cnt = d.counts || {};
+    const chip = (label, val, n) => `<button class="btn${_kbSrcFilter === val ? ' primary' : ''}" style="padding:3px 10px;font-size:12px" onclick="_kbSrcFilter='${val}';loadKbSources()">${label}${n != null ? ' ' + n : ''}</button>`;
+    fEl.innerHTML = chip('전체', '', cnt.all) + chip('수습', 'probation', cnt.probation)
+      + chip('퇴출후보', 'eviction_candidate', cnt.eviction_candidate) + chip('활성', 'active', cnt.active);
     const srcs = d.sources || [];
     if (!srcs.length) {
       el.className = '';
       el.innerHTML = '<div class="placeholder" style="padding:16px 0">소스가 없습니다.</div>';
       return;
     }
+    const lifeBadge = (s) => {
+      const life = s.lifecycle || 'active';
+      if (life === 'eviction_candidate') return '<span style="color:var(--sig-sell);font-weight:700">퇴출후보</span>';
+      if (life === 'probation') return '<span style="color:#c2410c;font-weight:700">수습</span>';
+      return '<span style="color:var(--dim)">active</span>';
+    };
+    const acts = (s) => {
+      if (!(s.source_key || '').includes(':')) return s.pinned ? '<span style="font-size:10px;color:var(--dim)">pin</span>' : '';
+      const k = esc(s.source_key);
+      if (s.lifecycle === 'eviction_candidate') {
+        return `<button class="btn" style="padding:2px 8px;font-size:11px" onclick="kbSrcAction('${k}','keep')">유지</button> `
+          + `<button class="btn" style="padding:2px 8px;font-size:11px;color:var(--sig-sell)" onclick="kbSrcAction('${k}','evict')">퇴출 확정</button> `
+          + `<button class="btn" style="padding:2px 8px;font-size:11px" onclick="kbSrcAction('${k}','reprobation')">재수습</button>`;
+      }
+      return `<button class="btn" style="padding:2px 8px;font-size:11px" onclick="kbSrcAction('${k}','${s.pinned ? 'unpin' : 'pin'}')">${s.pinned ? '고정해제' : '고정'}</button>`;
+    };
     const rows = srcs.map(s => `<tr style="vertical-align:top">
       <td><b>${esc(s.display_name || s.source_key)}</b>
-        <div style="font-size:11px;color:var(--dim)">${esc(s.source_key)}</div></td>
-      <td>${esc(s.trust_tier || '')}<div style="font-size:11px;color:var(--dim)">${esc(s.decision_event_mode || 'none')}</div></td>
+        <div style="font-size:11px;color:var(--dim)">${esc(s.source_key)}${s.pinned ? ' · pin' : ''}</div></td>
+      <td>${lifeBadge(s)}
+        <div style="font-size:11px;color:var(--dim)">${esc(s.trust_tier || '')} · 수집 ${s.collect_runs || 0}회</div>
+        ${s.quality_note ? `<div style="font-size:11px;color:var(--dim-2);margin-top:2px">${esc(s.quality_note)}</div>` : ''}</td>
       <td>${s.enabled ? '<span style="color:var(--sig-buy);font-weight:700">ON</span>' : '<span style="color:var(--sig-sell)">OFF</span>'}
-        <div style="font-size:11px;color:var(--dim)">수락 ${s.accepted_count || 0} · 보류 ${s.pending_count || 0} · 거절 ${s.rejected_count || 0}</div></td>
+        <div style="font-size:11px;color:var(--dim)">수락 ${s.accepted_count || 0} · 보류 ${s.pending_count || 0} · 거절 ${s.rejected_count || 0}</div>
+        <div style="margin-top:4px">${acts(s)}</div></td>
       <td style="font-size:11px;color:var(--dim)">${esc(s.last_result || '–')}<div>${_kbFmtTs(s.last_collected_at)}</div>
         ${s.last_error ? `<div style="color:var(--sig-sell)">${esc(s.last_error)}</div>` : ''}</td>
     </tr>`).join('');
     el.className = '';
-    el.innerHTML = `<table class="dtable"><thead><tr><th>소스</th><th>tier</th><th>상태</th><th>최근 수집</th></tr></thead><tbody>${rows}</tbody></table>`;
+    el.innerHTML = `<table class="dtable"><thead><tr><th>소스</th><th>수습·품질</th><th>상태·조치</th><th>최근 수집</th></tr></thead><tbody>${rows}</tbody></table>`;
   } catch (e) { el.textContent = '불러오지 못했습니다.'; }
+}
+async function kbSrcAction(sourceKey, action){
+  const r = await (await fetch('/api/kb/sources/lifecycle', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source_key: sourceKey, action }),
+  })).json();
+  if (r.detail || r.ok === false) { alert(r.detail || r.reason || '실패'); return; }
+  await loadKbSources();
 }
 
 async function loadKbDigests(){

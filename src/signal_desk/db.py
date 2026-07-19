@@ -85,6 +85,11 @@ CREATE TABLE IF NOT EXISTS kb_sources(
     accepted_count INTEGER NOT NULL DEFAULT 0,
     pending_count INTEGER NOT NULL DEFAULT 0,
     rejected_count INTEGER NOT NULL DEFAULT 0,
+    lifecycle TEXT NOT NULL DEFAULT 'active',
+    pinned INTEGER NOT NULL DEFAULT 0,
+    collect_runs INTEGER NOT NULL DEFAULT 0,
+    quality_score REAL,
+    quality_note TEXT,
     created INTEGER NOT NULL,
     updated INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS kb_events(
@@ -171,7 +176,19 @@ def _migrate(c: sqlite3.Connection) -> None:
         c.execute("ALTER TABLE kb_entries ADD COLUMN status TEXT NOT NULL DEFAULT 'confirmed'")
     if "scenes" not in {r[1] for r in c.execute("PRAGMA table_info(shortform)").fetchall()}:
         c.execute("ALTER TABLE shortform ADD COLUMN scenes TEXT")  # 장면 시퀀스(인트로+근거별 프레임) JSON
-    # kb_embeddings·kb_sources·kb_events는 _SCHEMA CREATE IF NOT EXISTS로 충분
+    # kb_embeddings·kb_events는 _SCHEMA CREATE IF NOT EXISTS로 충분
+    scols = {r[1] for r in c.execute("PRAGMA table_info(kb_sources)").fetchall()}
+    if scols:  # 기존 DB에 수습·퇴출 컬럼 보강
+        if "lifecycle" not in scols:
+            c.execute("ALTER TABLE kb_sources ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'active'")
+        if "pinned" not in scols:
+            c.execute("ALTER TABLE kb_sources ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+        if "collect_runs" not in scols:
+            c.execute("ALTER TABLE kb_sources ADD COLUMN collect_runs INTEGER NOT NULL DEFAULT 0")
+        if "quality_score" not in scols:
+            c.execute("ALTER TABLE kb_sources ADD COLUMN quality_score REAL")
+        if "quality_note" not in scols:
+            c.execute("ALTER TABLE kb_sources ADD COLUMN quality_note TEXT")
     _seed_kb_sources(c)
     c.commit()
     # 일회성: 기존 raw_text 절단 + VACUUM(파일 회수). conn()이 매번 _migrate를 돌므로 kv 플래그로 1회만.
@@ -738,18 +755,21 @@ _KB_SOURCE_SEEDS = (
 
 
 def _seed_kb_sources(c: sqlite3.Connection) -> None:
-    """패밀리 소스 멱등 시드 — 기존 행의 enabled/카운터는 덮지 않음."""
+    """패밀리 소스 멱등 시드 — 기존 행의 enabled/카운터·lifecycle은 덮지 않음.
+    패밀리 루트는 pinned=1(자동 퇴출 제외)."""
     now = int(time.time())
     for key, name, fam, tier, scopes, dclass, mode in _KB_SOURCE_SEEDS:
         c.execute(
             "INSERT INTO kb_sources(source_key,display_name,source_family,trust_tier,enabled,"
-            "allowed_scopes,default_doc_class,decision_event_mode,created,updated) "
-            "VALUES(?,?,?,?,1,?,?,?,?,?) "
+            "allowed_scopes,default_doc_class,decision_event_mode,lifecycle,pinned,"
+            "collect_runs,created,updated) "
+            "VALUES(?,?,?,?,1,?,?,?,'active',1,0,?,?) "
             "ON CONFLICT(source_key) DO UPDATE SET "
             "display_name=excluded.display_name, source_family=excluded.source_family, "
             "trust_tier=excluded.trust_tier, allowed_scopes=excluded.allowed_scopes, "
             "default_doc_class=excluded.default_doc_class, "
-            "decision_event_mode=excluded.decision_event_mode, updated=excluded.updated",
+            "decision_event_mode=excluded.decision_event_mode, "
+            "pinned=max(kb_sources.pinned, 1), updated=excluded.updated",
             (key, name, fam, tier, scopes, dclass, mode, now, now),
         )
 
@@ -757,13 +777,17 @@ def _seed_kb_sources(c: sqlite3.Connection) -> None:
 _SRC_COLS = (
     "source_key,display_name,source_family,trust_tier,enabled,allowed_scopes,default_doc_class,"
     "decision_event_mode,config_ref,last_collected_at,last_result,last_error,"
-    "accepted_count,pending_count,rejected_count,created,updated"
+    "accepted_count,pending_count,rejected_count,lifecycle,pinned,collect_runs,"
+    "quality_score,quality_note,created,updated"
 )
 
 
 def _src_row(r) -> dict:
     d = dict(zip(_SRC_COLS.split(","), r))
     d["enabled"] = bool(d.get("enabled"))
+    d["pinned"] = bool(d.get("pinned"))
+    d["lifecycle"] = d.get("lifecycle") or "active"
+    d["collect_runs"] = int(d.get("collect_runs") or 0)
     try:
         d["allowed_scopes"] = json.loads(d.get("allowed_scopes") or "[]")
     except Exception:
@@ -778,20 +802,24 @@ def kb_source_get(source_key: str) -> dict | None:
     return _src_row(row) if row else None
 
 
-def kb_sources_list() -> list[dict]:
+def kb_sources_list(*, lifecycle: str | None = None) -> list[dict]:
     c = conn()
-    rows = c.execute(
-        f"SELECT {_SRC_COLS} FROM kb_sources ORDER BY "
-        "CASE trust_tier WHEN 'official' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, "
-        "source_key"
-    ).fetchall()
+    q = f"SELECT {_SRC_COLS} FROM kb_sources"
+    args: list = []
+    if lifecycle:
+        q += " WHERE lifecycle=?"; args.append(lifecycle)
+    q += (" ORDER BY CASE lifecycle WHEN 'eviction_candidate' THEN 0 WHEN 'probation' THEN 1 ELSE 2 END, "
+          "CASE trust_tier WHEN 'official' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, "
+          "source_key")
+    rows = c.execute(q, args).fetchall()
     c.close()
     return [_src_row(r) for r in rows]
 
 
 def kb_source_ensure(source_key: str, *, display_name: str | None = None,
                      parent_key: str | None = None) -> dict | None:
-    """소스 조회·없으면 생성. parent_key면 패밀리 tier/정책을 상속(채널·피드 lazy upsert)."""
+    """소스 조회·없으면 생성. parent_key면 패밀리 tier/정책을 상속(채널·피드 lazy upsert).
+    자식 채널/피드는 lifecycle=probation(수습)으로 시작."""
     existing = kb_source_get(source_key)
     if existing:
         return existing
@@ -803,14 +831,16 @@ def kb_source_ensure(source_key: str, *, display_name: str | None = None,
         dclass = parent.get("default_doc_class")
         mode = parent.get("decision_event_mode") or "none"
         name = display_name or source_key
+        life = "probation"  # 채널·피드 수습
+        pinned = 0
     else:
         return None
     c = conn()
     c.execute(
         "INSERT OR IGNORE INTO kb_sources(source_key,display_name,source_family,trust_tier,enabled,"
-        "allowed_scopes,default_doc_class,decision_event_mode,created,updated) "
-        "VALUES(?,?,?,?,1,?,?,?,?,?)",
-        (source_key, name, fam, tier, scopes, dclass, mode, now, now),
+        "allowed_scopes,default_doc_class,decision_event_mode,lifecycle,pinned,collect_runs,"
+        "created,updated) VALUES(?,?,?,?,1,?,?,?,?,?,0,?,?)",
+        (source_key, name, fam, tier, scopes, dclass, mode, life, pinned, now, now),
     )
     c.commit()
     c.close()
@@ -830,6 +860,78 @@ def kb_sources_touch(source_key: str, result: str, *, error: str | None = None,
     )
     c.commit()
     c.close()
+
+
+def kb_sources_bump_run(source_key: str) -> None:
+    """채널/피드 1회 수집 패스 카운트(+1)."""
+    now = int(time.time())
+    c = conn()
+    c.execute(
+        "UPDATE kb_sources SET collect_runs=collect_runs+1, updated=? WHERE source_key=?",
+        (now, source_key),
+    )
+    c.commit()
+    c.close()
+
+
+def kb_source_set_quality(source_key: str, *, score: float | None, note: str,
+                          lifecycle: str | None = None) -> dict | None:
+    """품질 점수·메모·(선택) lifecycle 갱신. 자동 disable은 하지 않음."""
+    now = int(time.time())
+    c = conn()
+    if lifecycle:
+        c.execute(
+            "UPDATE kb_sources SET quality_score=?, quality_note=?, lifecycle=?, updated=? "
+            "WHERE source_key=?",
+            (score, (note or "")[:240], lifecycle, now, source_key),
+        )
+    else:
+        c.execute(
+            "UPDATE kb_sources SET quality_score=?, quality_note=?, updated=? WHERE source_key=?",
+            (score, (note or "")[:240], now, source_key),
+        )
+    c.commit()
+    c.close()
+    return kb_source_get(source_key)
+
+
+def kb_source_lifecycle_action(source_key: str, action: str) -> dict:
+    """관리자 수습/퇴출 조치. pin|unpin|keep|evict|reprobation.
+    evict만 enabled=0. 자동 퇴출 없음."""
+    src = kb_source_get(source_key)
+    if not src:
+        return {"ok": False, "reason": "소스 없음"}
+    now = int(time.time())
+    c = conn()
+    if action == "pin":
+        c.execute("UPDATE kb_sources SET pinned=1, lifecycle='active', updated=? WHERE source_key=?",
+                  (now, source_key))
+    elif action == "unpin":
+        c.execute("UPDATE kb_sources SET pinned=0, updated=? WHERE source_key=?", (now, source_key))
+    elif action == "keep":
+        c.execute(
+            "UPDATE kb_sources SET lifecycle='active', enabled=1, quality_note=?, updated=? "
+            "WHERE source_key=?",
+            ("관리자 유지", now, source_key),
+        )
+    elif action == "evict":
+        c.execute(
+            "UPDATE kb_sources SET enabled=0, lifecycle='eviction_candidate', quality_note=?, "
+            "updated=? WHERE source_key=?",
+            ("관리자 퇴출 확정", now, source_key),
+        )
+    elif action == "reprobation":
+        c.execute(
+            "UPDATE kb_sources SET lifecycle='probation', enabled=1, collect_runs=0, "
+            "quality_score=NULL, quality_note=?, updated=? WHERE source_key=?",
+            ("수습 재시작", now, source_key),
+        )
+    else:
+        c.close()
+        return {"ok": False, "reason": f"unknown action: {action}"}
+    c.commit()
+    c.close()
+    return {"ok": True, "source": kb_source_get(source_key)}
 
 
 # ---------- kb_events (구조화 이벤트 카드 — Decision 입력) ----------

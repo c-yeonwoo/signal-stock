@@ -275,7 +275,7 @@ _ADMIN_PATHS = {
     "/api/refresh", "/api/engine/config", "/api/engine/reset", "/api/engine/qualitative-promotion",
     "/api/backtest/analysis",
     "/api/kb/refresh", "/api/kb/import", "/api/kb/import-file", "/api/kb/documents", "/api/kb/digests",
-    "/api/kb/events", "/api/kb/sources",
+    "/api/kb/events", "/api/kb/sources", "/api/kb/sources/lifecycle",
     "/api/kb/collect-fanding", "/api/kb/collect-outstanding", "/api/kb/collect-youtube", "/api/kb/collect-rss",
     "/api/shortform/generate", "/api/shortform/generate-performance",
     "/api/shortform/queue", "/api/shortform/candidates",
@@ -1922,10 +1922,34 @@ def kb_events_get(ticker: str | None = None, limit: int = 50, active: bool = Fal
 
 
 @app.get("/api/kb/sources")
-def kb_sources_get(request: Request):
-    """KB 수집 소스 레지스트리(관리자 읽기) — tier·활성·최근 수집 결과."""
+def kb_sources_get(request: Request, lifecycle: str | None = None):
+    """KB 수집 소스 레지스트리(관리자 읽기) — tier·수습·퇴출후보·최근 수집."""
     _admin_or_403(request)
-    return {"sources": db.kb_sources_list(), "policy_version": "p1"}
+    srcs = db.kb_sources_list(lifecycle=lifecycle or None)
+    counts = {"all": 0, "probation": 0, "eviction_candidate": 0, "active": 0}
+    for s in db.kb_sources_list():
+        counts["all"] += 1
+        life = s.get("lifecycle") or "active"
+        if life in counts:
+            counts[life] += 1
+    return {"sources": srcs, "counts": counts, "policy_version": "p1.1"}
+
+
+@app.post("/api/kb/sources/lifecycle")
+def kb_sources_lifecycle(request: Request, data: dict = Body(...)):
+    """채널/피드 수습·퇴출 조치 — pin|unpin|keep|evict|reprobation.
+    자동 disable 없음. evict만 enabled=0."""
+    _admin_or_403(request)
+    key = str((data or {}).get("source_key") or "").strip()
+    action = str((data or {}).get("action") or "").strip().lower()
+    if not key or action not in ("pin", "unpin", "keep", "evict", "reprobation"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="source_key + action(pin|unpin|keep|evict|reprobation) 필요")
+    out = db.kb_source_lifecycle_action(key, action)
+    if not out.get("ok"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=out.get("reason") or "실패")
+    return out
 
 @app.get("/api/kb/digests")
 def kb_digests_get():
