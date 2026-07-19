@@ -89,7 +89,9 @@ def test_index_has_trust_and_onboard_ui(tmp_path, monkeypatch):
     assert "흐름 생성" in html and "/api/hypothesis" in html
     assert "최근 이슈 흐름" in html
     assert "지금 이 가정과 안 맞음" not in html
-    assert "무게↑" in html or "갈래 무게" in html
+    assert "무게↑" not in html and "갈래 무게" not in html
+    assert "지금 더 가까움" in html
+    assert "다시 볼 종목" in html
     assert "market-bar-end" in html  # 시황 바 오른쪽 슬롯(live·거시토글)
     # FAB는 footer 위에 띄움 — footer margin-bottom으로 바닥에서 띄우지 않음
     assert "body.chat-fab-on #chat-fab" in html

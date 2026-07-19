@@ -1,8 +1,8 @@
-"""최근 이슈 흐름(#6) — 이슈 → 쌍갈림(path/alt) → outcome.
+"""최근 이슈 흐름(#6) — 이슈 → 쌍갈림(path/alt) → 파급 → 관심 종목.
 
 뉴스·KB 핫이슈의 파급을 학습·시황 읽기용으로 펼친다. 가설 검증이 아님.
-관리자 수동 refresh 시에만 Sonnet이 문장 생성. 이슈 관심%·갈래 무게%는 룰.
-일일 자동 LLM 없음. GET은 캐시만(없으면 ready:false).
+관리자 수동 refresh 시에만 Sonnet이 문장 생성. 이슈·갈래 %는 룰.
+관심 종목(action)은 밸류체인 대표 티커로 룰 부착. 일일 자동 LLM 없음.
 """
 
 from __future__ import annotations
@@ -25,17 +25,19 @@ log = logging.getLogger("signal_desk.hypothesis")
 _KV_KEY = "hypo:v4:latest"
 _DISCLAIMER = (
     "학습·시황 읽기용 · 뉴스·KB 최근 이슈 흐름 · 수동 생성 · "
-    "관심 비중·갈래 무게는 이슈/쌍 안 상대값 · 예측·투자권유 아님 · 시그널과 별개"
+    "관심%·갈래%는 이슈/쌍 안 상대값 · 종목은 대표 후보(추천 아님) · "
+    "예측·투자권유 아님 · 시그널과 별개"
 )
 # 트리 연결 의미 — 검증 아님, 파급 갈래
 _EDGE_KO = {
     "if": "이슈",
-    "path": "이 방향일 때",
-    "alt": "다른 방향일 때",
+    "path": "이렇게 이어질 때",
+    "alt": "다르게 갈 때",
+    "action": "다시 볼 종목",
     # 레거시 캐시 호환
-    "then": "이 방향일 때",
-    "and": "이 방향일 때",
-    "but": "다른 방향일 때",
+    "then": "이렇게 이어질 때",
+    "and": "이렇게 이어질 때",
+    "but": "다르게 갈 때",
 }
 
 _ALLOWED_METRICS = frozenset({
@@ -64,12 +66,12 @@ _SECTOR_ALIASES = {
 _TEMPLATES: list[dict[str, Any]] = [
     {
         "id": "ai_capex",
-        "label": "AI·CAPEX 지속",
+        "label": "AI·데이터센터 투자가 이어진다는 이야기",
         "edge": "if",
         "assumptions": [
             "데이터센터·AI 설비투자가 이어진다",
-            "반도체 사이클이 아직 꺾이지 않는다",
-            "위험선호(성장·기술)가 유지된다",
+            "반도체 수요가 아직 꺾이지 않는다",
+            "성장·기술주에 돈이 더 모인다",
         ],
         "sector_keys": ["semiconductor", "ai_datacenter", "power_nuclear", "robotics"],
         "evidence_query": "AI 데이터센터 반도체 HBM 설비투자 CAPEX",
@@ -79,8 +81,8 @@ _TEMPLATES: list[dict[str, Any]] = [
                 "id": "ai_capex_then_growth",
                 "kind": "fork",
                 "edge": "path",
-                "label": "나스닥 상대강세 · VIX 진정",
-                "assumptions": ["성장·기술 선호가 유지되면 위험지표가 안정권을 지킨다"],
+                "label": "그 투자가 이어지고 시장도 차분하면",
+                "assumptions": ["성장·기술 선호가 유지되면 변동성이 낮게 유지된다"],
                 "conditions": [
                     {"metric": "NASDAQCOM", "op": "chg>", "threshold": 0, "label": "나스닥 상승"},
                     {"metric": "VIXCLS", "op": "<", "threshold": 20, "label": "VIX < 20"},
@@ -90,8 +92,8 @@ _TEMPLATES: list[dict[str, Any]] = [
                         "id": "ai_capex_out_tech",
                         "kind": "outcome",
                         "edge": "path",
-                        "label": "반도체·AI·전력 인프라 관심",
-                        "assumptions": ["CAPEX 서사가 이어질 때 상대 주목 섹터"],
+                        "label": "그러면 반도체·AI·전력 쪽을 더 볼 만함",
+                        "assumptions": ["설비투자 이야기가 이어질 때 상대 주목 업종"],
                         "sector_keys": ["semiconductor", "ai_datacenter", "power_nuclear"],
                         "evidence_query": "AI 데이터센터 반도체 HBM 설비투자",
                     },
@@ -101,8 +103,8 @@ _TEMPLATES: list[dict[str, Any]] = [
                 "id": "ai_capex_but_vol",
                 "kind": "fork",
                 "edge": "alt",
-                "label": "VIX 급등 · 거시 비우호 동시",
-                "assumptions": ["성장 테마여도 변동성·거시 악화가 겹치면 숨고르기"],
+                "label": "투자는 있어도 변동성이 커지면",
+                "assumptions": ["성장 테마여도 공포·거시 악화가 겹치면 쉬어간다"],
                 "conditions": [
                     {"metric": "VIXCLS", "op": ">=", "threshold": 25, "label": "VIX ≥ 25"},
                     {"metric": "macro_bias", "op": "==", "threshold": "비우호", "label": "거시 비우호"},
@@ -112,7 +114,7 @@ _TEMPLATES: list[dict[str, Any]] = [
                         "id": "ai_capex_out_pause",
                         "kind": "outcome",
                         "edge": "alt",
-                        "label": "성장 테마 숨고르기 · 방어 상대",
+                        "label": "그러면 성장주는 쉬고 방어·금융을 볼 만함",
                         "assumptions": ["테크 쏠림이 쉬어가고 방어·현금성이 상대 강세"],
                         "sector_keys": ["defense", "telecom", "finance"],
                         "evidence_query": "변동성 VIX 성장주 조정 방어주",
@@ -123,11 +125,11 @@ _TEMPLATES: list[dict[str, Any]] = [
     },
     {
         "id": "consumer_shift",
-        "label": "정책·물가·소비 쪽 이동",
+        "label": "물가·금리가 소비에 유리해진다는 이야기",
         "edge": "if",
         "assumptions": [
             "물가 안정·금리 부담 완화로 소비 여력이 돌아온다",
-            "AI·성장주 쏠림이 쉬어가고 내수·소비재가 상대 주목받는다",
+            "성장주 쏠림이 쉬어가고 내수·소비재가 상대 주목받는다",
             "정책 초점이 설비투자보다 물가·가계 쪽에 기운다",
         ],
         "sector_keys": ["retail", "cosmetics", "telecom", "finance"],
@@ -138,8 +140,8 @@ _TEMPLATES: list[dict[str, Any]] = [
                 "id": "consumer_then_easing",
                 "kind": "fork",
                 "edge": "path",
-                "label": "CPI 안정 · 금리 부담 완화",
-                "assumptions": ["디스인플레·금리 방향이 소비에 우호적일 때"],
+                "label": "물가가 안정되고 금리 부담이 줄면",
+                "assumptions": ["물가·금리 방향이 소비에 우호적일 때"],
                 "conditions": [
                     {"metric": "CPIAUCSL", "op": "chg<=", "threshold": 0, "label": "CPI 안정·하락"},
                     {"metric": "FEDFUNDS", "op": "chg<=", "threshold": 0, "label": "기준금리 동결·인하"},
@@ -149,8 +151,8 @@ _TEMPLATES: list[dict[str, Any]] = [
                         "id": "consumer_out_retail",
                         "kind": "outcome",
                         "edge": "path",
-                        "label": "내수·소비재·유통 관심",
-                        "assumptions": ["소비 회복 서사에 맞는 섹터 렌즈"],
+                        "label": "그러면 유통·화장품·통신을 더 볼 만함",
+                        "assumptions": ["소비 회복 이야기에 맞는 업종"],
                         "sector_keys": ["retail", "cosmetics", "telecom"],
                         "evidence_query": "소비 내수 유통 필수소비재",
                     },
@@ -160,7 +162,7 @@ _TEMPLATES: list[dict[str, Any]] = [
                 "id": "consumer_but_inflate",
                 "kind": "fork",
                 "edge": "alt",
-                "label": "물가 재가속",
+                "label": "물가가 다시 오르면",
                 "assumptions": ["물가가 다시 올라가면 소비 회복이 미뤄진다"],
                 "conditions": [
                     {"metric": "CPIAUCSL", "op": "chg>", "threshold": 0, "label": "CPI 상승"},
@@ -170,8 +172,8 @@ _TEMPLATES: list[dict[str, Any]] = [
                         "id": "consumer_out_delay",
                         "kind": "outcome",
                         "edge": "alt",
-                        "label": "소비 회복 지연 · 관망",
-                        "assumptions": ["내수 테마보다 물가·금리 확인이 우선"],
+                        "label": "그러면 소비 테마는 미루고 금리·금융을 볼 만함",
+                        "assumptions": ["내수보다 물가·금리 확인이 우선"],
                         "sector_keys": ["finance", "telecom"],
                         "evidence_query": "인플레 물가 재가속 소비둔화",
                     },
@@ -181,7 +183,7 @@ _TEMPLATES: list[dict[str, Any]] = [
     },
     {
         "id": "risk_off",
-        "label": "리스크오프",
+        "label": "불안이 커져 위험한 자산에서 돈이 빠진다",
         "edge": "if",
         "assumptions": [
             "변동성·불확실성이 커져 위험자산 선호가 줄어든다",
@@ -196,8 +198,8 @@ _TEMPLATES: list[dict[str, Any]] = [
                 "id": "risk_off_then_fear",
                 "kind": "fork",
                 "edge": "path",
-                "label": "VIX 상승 · 국면 약세/조정",
-                "assumptions": ["공포·조정 국면에서 위험회피가 우세"],
+                "label": "변동성이 커지고 시장이 약해지면",
+                "assumptions": ["공포·조정 국면에서 안전한 쪽으로 돈이 이동"],
                 "conditions": [
                     {"metric": "VIXCLS", "op": ">=", "threshold": 20, "label": "VIX ≥ 20"},
                     {"metric": "regime", "op": "in", "threshold": ["약세", "조정"], "label": "국면 약세·조정"},
@@ -207,8 +209,8 @@ _TEMPLATES: list[dict[str, Any]] = [
                         "id": "risk_off_out_def",
                         "kind": "outcome",
                         "edge": "path",
-                        "label": "방어·에너지·배당 관심",
-                        "assumptions": ["위험회피 시 상대 강세 섹터"],
+                        "label": "그러면 방산·에너지·통신을 더 볼 만함",
+                        "assumptions": ["위험 회피 시 상대 강세 업종"],
                         "sector_keys": ["defense", "energy", "telecom"],
                         "evidence_query": "방어주 배당 에너지 안전자산",
                     },
@@ -218,7 +220,7 @@ _TEMPLATES: list[dict[str, Any]] = [
                 "id": "risk_off_and_nasdaq",
                 "kind": "fork",
                 "edge": "alt",
-                "label": "나스닥 하락 동반",
+                "label": "나스닥까지 같이 빠지면",
                 "assumptions": ["위험자산 전반이 같이 빠지면 회피가 강화된다"],
                 "conditions": [
                     {"metric": "NASDAQCOM", "op": "chg<", "threshold": 0, "label": "나스닥 하락"},
@@ -229,7 +231,7 @@ _TEMPLATES: list[dict[str, Any]] = [
                         "id": "risk_off_out_cash",
                         "kind": "outcome",
                         "edge": "alt",
-                        "label": "위험자산 회피 강화",
+                        "label": "그러면 성장주보다 방어·금융을 볼 만함",
                         "assumptions": ["성장·위험 테마보다 현금성·방어 우선"],
                         "sector_keys": ["defense", "finance", "energy"],
                         "evidence_query": "위험회피 주식조정 안전자산 현금",
@@ -369,6 +371,66 @@ def _sector_nodes(keys: list[str]) -> list[dict]:
             continue
         out.append({"key": k, "name": sec["name"], "summary": sec.get("summary") or ""})
     return out
+
+
+def _tickers_for_sectors(keys: list[str], limit: int = 6) -> list[dict]:
+    """밸류체인 국내 대표 티커. 추천이 아니라 학습용 관심 후보."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for k in keys or []:
+        sec = valuechain.sector(k) if hasattr(valuechain, "sector") else None
+        if not sec:
+            sec = next((s for s in valuechain.sectors() if s["key"] == k), None)
+        if not sec:
+            continue
+        for st in sec.get("stages") or []:
+            for c in st.get("domestic") or []:
+                tk = c.get("ticker")
+                if not tk or tk in seen:
+                    continue
+                seen.add(tk)
+                out.append({
+                    "ticker": tk,
+                    "name": c.get("name") or tk,
+                    "sector": sec.get("name") or k,
+                    "vc_key": k,
+                })
+                if len(out) >= limit:
+                    return out
+    return out
+
+
+def _make_action_node(parent_id: str, sector_keys: list[str], edge: str) -> dict:
+    watches = _tickers_for_sectors(sector_keys, limit=6)
+    if watches:
+        names = "·".join(w["name"] for w in watches[:4])
+        label = f"다시 볼 종목 · {names}"
+    else:
+        label = "다시 볼 종목 · 관련 업종 대표주"
+    return {
+        "id": f"{parent_id}_act",
+        "parent_id": parent_id,
+        "kind": "action",
+        "edge": "action",
+        "edge_ko": _EDGE_KO["action"],
+        "label": label,
+        "detail": (
+            "이 갈래를 공부할 때 시그널 탭에서 더 보면 좋은 대표 종목이에요. "
+            "매수 추천이 아닙니다."
+        ),
+        "support_pct": None,
+        "branch_pct": None,
+        "emphasized": False,
+        "assumptions": ["학습용 관심 종목 · 매수 추천 아님"],
+        "conditions": [],
+        "current": {},
+        "sector_keys": list(sector_keys or []),
+        "sectors": _sector_nodes(sector_keys or []),
+        "watch_tickers": watches,
+        "evidence": [],
+        "evidence_n": 0,
+        "children": [],
+    }
 
 
 def _sector_key_set() -> set[str]:
@@ -744,9 +806,11 @@ def _build_prompt_bundle() -> dict[str, Any]:
 
 
 def _default_outcome(tid: str, edge: str, sector_keys: list[str], eq: str) -> dict:
+    sec_names = [s["name"] for s in _sector_nodes(sector_keys[:3])]
+    sec_txt = "·".join(sec_names) if sec_names else "관련 업종"
     return {
         "id": f"{tid}_out", "kind": "outcome", "edge": edge,
-        "label": "관련 업종·지표 파급을 눈여겨볼 만함", "detail": "",
+        "label": f"그러면 {sec_txt} 쪽을 더 볼 만함", "detail": "",
         "assumptions": [], "sector_keys": sector_keys[:3],
         "evidence_query": eq, "children": [],
     }
@@ -880,9 +944,10 @@ def _llm_draft_templates() -> tuple[list[dict] | None, str | None, str | None]:
     points = "\n".join(f"- {p}" for p in bundle["macro_points"][:3]) or "(없음)"
     system = (
         "최근 이슈 흐름 JSON 에디터. 학습용. 가설검증·투자권유·확률% 금지. "
-        "이슈 1~2개만. 각 이슈 children는 path·alt 정확히 2개. "
-        "각 fork children에 outcome 1개. label 짧은 한국어. "
-        "설명·코드펜스 없이 JSON 객체 하나만."
+        "이슈 1~2개. 각 이슈 children는 path·alt 정확히 2개. 각 fork 아래 outcome 1개. "
+        "label은 앞 문장을 이어 읽는 쉬운 한국어 한 줄. "
+        "영문·리스크온/오프·CAPEX·VIX 단독 제목 금지(지표는 conditions에만). "
+        "종목명은 넣지 말 것(서버가 붙임). JSON 객체만."
     )
     user = (
         f"요약: {(bundle['macro_summary'] or '')[:280] or '(없음)'}\n"
@@ -892,8 +957,13 @@ def _llm_draft_templates() -> tuple[list[dict] | None, str | None, str | None]:
         f"직전: {prev}\n"
         f"sector_keys: {sector_list}\n"
         "metric: NASDAQCOM,VIXCLS,CPIAUCSL,FEDFUNDS,macro_bias,regime | "
-        "op: chg>,chg<,>=,<=,==,in | affinity: risk_on|consumer|risk_off\n"
-        "필드 짧게: assumptions≤2, conditions≤2, detail≤40자.\n"
+        "op: chg>,chg<,>=,<=,==,in | affinity(내부용): risk_on|consumer|risk_off\n"
+        "label 연결 규칙(중요):\n"
+        "- 이슈: '~라는 이야기/경계/기대' (예: 주가가 너무 올랐다는 거품 경계)\n"
+        "- path: 이슈 주어를 이어 '~이 이어지면/더 가면' (예: 그 강세가 더 이어지면)\n"
+        "- alt: '~이 꺾이면/반대로 가면' (예: 거품 우려가 커지면)\n"
+        "- outcome: '그러면 ○○ 업종을 더 볼 만함' (주어·업종 명시)\n"
+        "필드: assumptions≤2, conditions≤2, detail≤40자. 종목명 금지.\n"
         '스키마:{"branches":[{"label":"","detail":"","affinity":"risk_on",'
         '"assumptions":[""],"sector_keys":["semiconductor"],"evidence_query":"",'
         '"children":[{"label":"","edge":"path","assumptions":[],'
@@ -955,6 +1025,8 @@ def _build_child_node(
     edge = _coerce_edge(tmpl.get("edge")) if kind == "fork" else (tmpl.get("edge") or "path")
     if kind == "outcome":
         edge = _coerce_edge(tmpl.get("edge")) if tmpl.get("edge") else "path"
+    if kind == "outcome" and not any(c.get("kind") == "action" for c in children):
+        children.append(_make_action_node(node_id, sector_keys, edge))
     node = {
         "id": node_id,
         "parent_id": parent_id,
@@ -971,6 +1043,7 @@ def _build_child_node(
         "current": current,
         "sector_keys": sector_keys,
         "sectors": _sector_nodes(sector_keys),
+        "watch_tickers": list(tmpl.get("watch_tickers") or []),
         "evidence": evidence,
         "evidence_n": len(evidence),
         "children": children,
@@ -1071,7 +1144,7 @@ def build(*, templates: list[dict] | None = None, store_prices=None, store_macro
         "kind": "root",
         "edge": None,
         "label": "최근 이슈 흐름",
-        "detail": "뉴스·KB에서 뽑은 관심 이슈와, 방향별 파급(산업·지표) 갈래",
+        "detail": "뉴스·KB 관심 이슈 → 이렇게/다르게 이어질 때 → 업종 파급 → 다시 볼 종목",
         "support_pct": 100,
         "assumptions": [],
         "conditions": [],

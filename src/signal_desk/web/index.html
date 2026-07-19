@@ -772,9 +772,9 @@
         <button type="button" class="btn" id="hypo-refresh-btn" style="display:none;margin-left:10px;padding:3px 10px;font-size:12px"
           onclick="refreshHypothesis()">흐름 생성</button>
       </h3>
-      <p class="page-desc">최근 뉴스·KB에서 뽑은 <b>관심 이슈</b>를 왼쪽→오른쪽으로 펼칩니다.
-        각 이슈는 <b>이 방향 / 다른 방향</b> 쌍으로 갈라지고, 그다음 산업·지표 파급까지 봅니다.
-        퍼센트는 이슈 간 관심·갈래 안 상대 무게이지, 미래가 그렇게 된다는 뜻이 아닙니다.
+      <p class="page-desc">최근 뉴스·KB에서 뽑은 <b>관심 이슈</b>를 왼쪽→오른쪽으로 이어서 읽습니다.
+        <b>이렇게 이어질 때 / 다르게 갈 때</b> → 업종 파급 → <b>다시 볼 종목</b>까지.
+        %는 이슈·갈래 안 상대 관심이지, 미래 예고가 아닙니다.
         <b>관리자 수동 생성</b> 후 DB에 저장됩니다.</p>
       <div id="hypo-asof" style="font-size:11px;color:var(--dim-2);margin:0 0 10px"></div>
       <div id="hypo-if-bar" class="hypo-if-bar"></div>
@@ -783,8 +783,8 @@
         <div class="hypo-zoom-hint">휠·핀치로 확대·축소 · 드래그로 이동</div>
       </div>
       <div class="hypo-legend">
-        <span>왼쪽→오른쪽: 이슈 → 쌍갈림(이 방향/다른 방향) → 파급(업종·사이드이펙트)</span>
-        <span>굵은 갈래: 지금 지표와 더 겹치는 쪽(상대 무게) · 검증·예고 아님</span>
+        <span>왼쪽→오른쪽: 이슈 → 이렇게/다르게 → 업종 파급 → 다시 볼 종목</span>
+        <span>굵은 갈래: 지금 지표와 더 가까운 쪽 · 검증·예고 아님</span>
       </div>
       <div id="hypo-detail" class="hypo-detail" style="display:none"></div>
       <p id="hypo-disc" style="margin-top:12px;font-size:11px;color:var(--dim-2);line-height:1.5"></p>
@@ -1647,7 +1647,7 @@ function drawCycleChart(phases, cur){
   _cycleChart.resize();
 }
 
-// ===== 최근 이슈 흐름 — 파급 트리 (쌍갈림 · 무게 강조 · 줌) =====
+// ===== 최근 이슈 흐름 — 파급 트리 (쌍갈림 · 강조 · 관심종목 · 줌) =====
 let _hypoData = null;
 let _hypoActiveIf = null;
 let _hypoSelected = null;
@@ -1661,17 +1661,30 @@ function _hypoIndex(node, map){
 }
 function _hypoEdgeKo(n){
   return (n && n.edge_ko) || ({
-    path: '이 방향일 때',
-    alt: '다른 방향일 때',
-    then: '이 방향일 때',
-    and: '이 방향일 때',
-    but: '다른 방향일 때',
+    path: '이렇게 이어질 때',
+    alt: '다르게 갈 때',
+    then: '이렇게 이어질 때',
+    and: '이렇게 이어질 때',
+    but: '다르게 갈 때',
+    action: '다시 볼 종목',
     if: '이슈',
   })[(n && n.edge) || ''] || '';
+}
+function _hypoChain(id){
+  const parts = [];
+  let cur = _hypoById[id];
+  const guard = new Set();
+  while (cur && cur.kind !== 'root' && !guard.has(cur.id)) {
+    guard.add(cur.id);
+    parts.unshift(cur.label);
+    cur = cur.parent_id ? _hypoById[cur.parent_id] : null;
+  }
+  return parts;
 }
 function _hypoDotColor(kind, selected, emphasized){
   if (kind === 'root') return '#0B1220';
   if (kind === 'if') return selected ? '#0F766E' : '#5c6578';
+  if (kind === 'action') return emphasized ? '#0F766E' : '#6b7280';
   if (kind === 'outcome') return emphasized ? '#0F766E' : '#8b93a7';
   if (emphasized) return '#0F766E';
   return '#9aa3b5';
@@ -1686,11 +1699,16 @@ function _hypoToEcharts(node, activeIf, parentEmphasized){
   else if (kind === 'if') meta = `관심 ${node.support_pct ?? '–'}%`;
   else if (kind === 'fork') {
     const pct = node.branch_pct;
-    meta = pct != null ? `갈래 ${pct}%${emphasized ? ' · 무게↑' : ''}` : (emphasized ? '무게↑' : '');
-  } else if (kind === 'outcome') meta = emphasized ? '무게 있는 갈래의 파급' : '';
-  const kids = (node.children || []).map(c => _hypoToEcharts(c, activeIf, kind === 'fork' ? emphasized : false));
+    meta = pct != null
+      ? `이 갈래 ${pct}%${emphasized ? ' · 지금 더 가까움' : ''}`
+      : (emphasized ? '지금 더 가까움' : '');
+  } else if (kind === 'outcome') meta = emphasized ? '위 갈래가 이어질 때' : '위 갈래가 이어질 때';
+  else if (kind === 'action') meta = '시그널에서 더 보기';
+  const passEmp = (kind === 'fork' || kind === 'outcome') ? emphasized : false;
+  const kids = (node.children || []).map(c => _hypoToEcharts(c, activeIf, passEmp));
   let size = kind === 'root' ? 14 : (kind === 'if' ? 12 : 9);
   if (kind === 'fork' && emphasized) size = 12;
+  if (kind === 'action') size = 8;
   const lineW = emphasized || selected || kind === 'root' ? 2.1 : 1.05;
   const lineC = emphasized || selected || kind === 'root' ? '#0F766E88' : '#d4d0c6';
   return {
@@ -1754,12 +1772,17 @@ function drawHypothesisTree(tree){
         const lines = [`<b style="font-size:13px">${esc(n.label)}</b>`];
         if (n.detail) lines.push(`<span style="opacity:.9">${esc(n.detail)}</span>`);
         if (n.kind === 'if') {
-          lines.push(`관심 비중 ${n.support_pct}% · 이슈는 동시에 볼 수 있음`);
+          lines.push(`관심 ${n.support_pct}% · 이슈는 동시에 볼 수 있음`);
         } else {
           const ek = _hypoEdgeKo(n);
-          if (ek && (n.kind === 'fork' || n.kind === 'then')) lines.push(`갈래: ${esc(ek)}`);
+          if (ek && (n.kind === 'fork' || n.kind === 'then' || n.kind === 'action')) {
+            lines.push(esc(ek));
+          }
           if (n.branch_pct != null) {
-            lines.push(`이 쌍에서 상대 무게 ${n.branch_pct}%${n.emphasized ? ' · 더 겹침' : ''}`);
+            lines.push(`이 쌍에서 ${n.branch_pct}%${n.emphasized ? ' · 지금 더 가까움' : ''}`);
+          }
+          if (n.kind === 'action' && (n.watch_tickers || []).length) {
+            lines.push((n.watch_tickers || []).slice(0, 4).map(w => w.name).join(' · '));
           }
         }
         if ((n.conditions || []).length) {
@@ -1851,25 +1874,38 @@ function selectHypoNode(id){
     : `<div style="color:var(--dim-2);font-size:12px">아직 연결된 뉴스 링크가 없습니다.</div>`;
   const ek = _hypoEdgeKo(n);
   const titleExtra = n.kind === 'if'
-    ? ` · 관심 비중 ${n.support_pct}%`
-    : (n.branch_pct != null ? ` · 갈래 무게 ${n.branch_pct}%` : '');
+    ? ` · 관심 ${n.support_pct}%`
+    : (n.branch_pct != null ? ` · 이 갈래 ${n.branch_pct}%` : '');
   const isFork = n.kind === 'fork' || n.kind === 'then';
+  const chain = _hypoChain(n.id);
+  const chainLine = chain.length > 1
+    ? `<p style="margin:0 0 8px;font-size:12px;color:var(--dim);line-height:1.5">${chain.map(esc).join(' → ')}</p>`
+    : '';
   const branchLine = (isFork && ek)
     ? `<p style="margin:0 0 8px;font-size:12px;color:var(--dim)">이 가지는 <b style="color:var(--txt)">${esc(ek)}</b> 보는 갈래입니다.`
-      + (n.emphasized ? ' <b style="color:var(--accent)">지금 지표와 더 겹치는 쪽</b>입니다.' : '')
+      + (n.emphasized ? ' <b style="color:var(--accent)">지금 지표와 더 가까운 쪽</b>입니다.' : '')
       + `</p>`
+    : '';
+  const watches = (n.watch_tickers || []).map(w =>
+    `<button type="button" class="hc-sec" onclick="gotoSignal('${esc(w.ticker)}','kr')">${esc(w.name)}</button>`
+  ).join(' ');
+  const watchBlock = (n.kind === 'action' || watches)
+    ? `<b style="font-size:12px;color:var(--dim)">다시 볼 종목</b>
+       <div class="hc-sectors" style="margin:6px 0 10px">${watches || '–'}</div>
+       <p style="margin:0 0 10px;font-size:11px;color:var(--dim-2)">클릭하면 시그널 탭으로 · 매수 추천 아님</p>`
     : '';
   detail.style.display = '';
   detail.innerHTML = `<div class="hd-title">${esc(n.label)}${titleExtra}</div>
-    ${branchLine}
+    ${chainLine}${branchLine}
     ${n.detail ? `<p style="margin:0 0 10px;font-size:13px;color:var(--dim);line-height:1.5">${esc(n.detail)}</p>` : ''}
     <div class="hd-metrics">${metrics}</div>
     ${assump ? `<b style="font-size:12px;color:var(--dim)">쉽게 말하면</b><ul>${assump}</ul>` : ''}
     ${conds ? `<b style="font-size:12px;color:var(--dim)">참고로 보는 지표</b><ul>${conds}</ul>` : ''}
-    <b style="font-size:12px;color:var(--dim)">관심 섹터</b>
+    <b style="font-size:12px;color:var(--dim)">관심 업종</b>
     <div class="hc-sectors" style="margin:6px 0 10px">${secs || '–'}</div>
+    ${watchBlock}
     <b style="font-size:12px;color:var(--dim)">근거 뉴스</b>${ev}
-    <div style="margin-top:8px;font-size:11px;color:var(--dim-2)">관심%·갈래%는 상대 무게 · 가설 검증·미래 예고가 아닙니다</div>`;
+    <div style="margin-top:8px;font-size:11px;color:var(--dim-2)">관심%·갈래%는 상대값 · 가설 검증·미래 예고가 아닙니다</div>`;
 }
 async function loadHypothesis(){
   const el = document.getElementById('hypo-graph');
