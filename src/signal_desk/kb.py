@@ -309,10 +309,67 @@ def _source_allows(src: dict | None, scope: str) -> tuple[bool, str]:
         return False, "등록되지 않은 소스"
     if not src.get("enabled"):
         return False, f"비활성 소스({src.get('source_key')})"
+    if (src.get("lifecycle") or "") == "eviction_candidate":
+        return False, f"퇴출후보(수집 보류·{src.get('source_key')})"
     scopes = src.get("allowed_scopes") or []
     if scopes and scope not in scopes:
         return False, f"scope '{scope}' 미허용"
     return True, ""
+
+
+# 채널/피드 수습·퇴출(자동 disable 없음 — 관리자 승인)
+_PROBATION_MIN_RUNS = 3
+_PROBATION_MIN_DOCS = 5
+_EVICT_MAX_ACCEPT_RATE = 0.25
+_EVICT_MIN_REJECT_RATE = 0.35
+_PROMOTE_MIN_ACCEPT_RATE = 0.50
+_PROMOTE_MIN_ACCEPTS = 3
+
+
+def evaluate_source_quality(source_key: str) -> dict:
+    """채널·피드 품질 평가 → probation 유지 / active 승격 / eviction_candidate.
+    패밀리 루트·pinned는 스킵. enabled는 건드리지 않음(퇴출 확정은 관리자)."""
+    src = db.kb_source_get(source_key)
+    if not src:
+        return {"ok": False, "reason": "소스 없음"}
+    if ":" not in source_key:  # 패밀리 루트(youtube/rss/…)는 평가 대상 아님
+        return {"ok": True, "skipped": True, "reason": "패밀리 루트"}
+    if src.get("pinned"):
+        return {"ok": True, "skipped": True, "reason": "고정(pin)"}
+    acc = int(src.get("accepted_count") or 0)
+    pend = int(src.get("pending_count") or 0)
+    rej = int(src.get("rejected_count") or 0)
+    total = acc + pend + rej
+    runs = int(src.get("collect_runs") or 0)
+    accept_rate = (acc / total) if total else 0.0
+    reject_rate = (rej / total) if total else 0.0
+    score = round(accept_rate - reject_rate, 3)
+    mature = runs >= _PROBATION_MIN_RUNS and total >= _PROBATION_MIN_DOCS
+    life = src.get("lifecycle") or "probation"
+    note = f"수락률 {accept_rate:.0%} · 거절률 {reject_rate:.0%} · 문서 {total} · 수집 {runs}회"
+    if not mature:
+        db.kb_source_set_quality(source_key, score=score, note=f"수습 중 — {note}",
+                                 lifecycle="probation" if life != "eviction_candidate" else life)
+        return {"ok": True, "lifecycle": "probation", "mature": False, "score": score, "note": note}
+    # 퇴출 후보
+    if accept_rate <= _EVICT_MAX_ACCEPT_RATE and reject_rate >= _EVICT_MIN_REJECT_RATE:
+        db.kb_source_set_quality(
+            source_key, score=score,
+            note=f"퇴출후보 — KB 기여 낮음 ({note})",
+            lifecycle="eviction_candidate",
+        )
+        return {"ok": True, "lifecycle": "eviction_candidate", "mature": True,
+                "score": score, "note": note}
+    # 수습 통과
+    if accept_rate >= _PROMOTE_MIN_ACCEPT_RATE and acc >= _PROMOTE_MIN_ACCEPTS:
+        db.kb_source_set_quality(
+            source_key, score=score, note=f"수습 통과 — {note}", lifecycle="active",
+        )
+        return {"ok": True, "lifecycle": "active", "mature": True, "score": score, "note": note}
+    # 애매하면 수습 유지
+    db.kb_source_set_quality(source_key, score=score, note=f"관찰 계속 — {note}",
+                             lifecycle="probation")
+    return {"ok": True, "lifecycle": "probation", "mature": True, "score": score, "note": note}
 
 
 def _legacy_store_source(family: str, *, entry_source: str | None = None) -> str:
@@ -881,13 +938,22 @@ def collect_youtube(max_per_channel: int | None = None, force: bool = False) -> 
     if max_per_channel is None:
         max_per_channel = config.youtube_max_per_channel()
     seen = set() if force else db.kb_document_urls(source="insight")
-    macro, skipped, errors = [], [], []
+    macro, skipped, errors, reviews = [], [], [], []
     # 화이트리스트 채널은 거시·시장 해설 전용 → 제목에 기업명이 있어도 항상 거시 KB로(개별 종목 경로 X).
     for handle in config.youtube_channels():
+        sk = f"youtube:{_source_slug(handle)}"
+        # lazy 등록(수습) — 퇴출후보는 API 호출 전에 스킵(쿼터 절약)
+        src = db.kb_source_ensure(sk, display_name=f"YouTube @{handle}", parent_key="youtube")
+        if src and (src.get("lifecycle") == "eviction_candidate" or not src.get("enabled")) and not force:
+            skipped.append({"channel": handle, "why": "퇴출후보/비활성 — 수집 보류"})
+            continue
+        db.kb_sources_bump_run(sk)
         res = youtube.channel_videos(handle, max_results=max_per_channel)
         channel = res.get("channel") or handle
         if not res.get("videos"):
             errors.append({"channel": handle, "why": "영상 목록 조회 실패"})
+            db.kb_sources_touch(sk, "error", error="영상 목록 조회 실패", rejected=1)
+            reviews.append(evaluate_source_quality(sk))
             continue
         for v in res["videos"]:
             title, vid = v.get("title") or "", v.get("video_id")
@@ -901,18 +967,24 @@ def collect_youtube(max_per_channel: int | None = None, force: bool = False) -> 
             raw = youtube.transcript(vid) or (v.get("description") or "")
             if len(raw.strip()) < 60:
                 skipped.append({"video_id": vid, "title": title, "why": "자막·설명 없음"})
+                db.kb_sources_touch(sk, "rejected", error="자막·설명 없음", rejected=1)
                 continue
             pub = v.get("published") or ""
             summary = _macro_source_summary(title, raw)  # 긴 자막은 LLM 요약, 원문은 raw 보관
-            sk = f"youtube:{_source_slug(handle)}"
             r = import_macro(f"[{channel}] {title}", raw, url=url, published=pub, summary=summary,
                              source_key=sk, display_name=f"YouTube @{handle}", parent_key="youtube")
             if r.get("ok"):
                 macro.append({"channel": channel, "title": title, "published": pub, "chars": len(raw)})
             else:
                 skipped.append({"video_id": vid, "title": title, "why": r.get("reason", "미저장")})
+                # 게이트 거절은 ingest_document가 rejected 카운트. 그 외 실패만 보정.
+                why = r.get("reason") or ""
+                if why and "게이트" not in why and "퇴출" not in why and "비활성" not in why and "등록" not in why:
+                    db.kb_sources_touch(sk, "rejected", error=why[:200], rejected=1)
+        reviews.append(evaluate_source_quality(sk))
     log.info("youtube 수집: 거시 %d · 스킵 %d · 오류 %d", len(macro), len(skipped), len(errors))
-    return {"ok": True, "imported": [], "macro": macro, "skipped": skipped, "errors": errors}
+    return {"ok": True, "imported": [], "macro": macro, "skipped": skipped, "errors": errors,
+            "source_reviews": reviews}
 
 
 def collect_rss_macro(force: bool = False, limit_per_feed: int | None = None) -> dict:
@@ -926,14 +998,22 @@ def collect_rss_macro(force: bool = False, limit_per_feed: int | None = None) ->
         return {"ok": False, "reason": "MACRO_RSS_FEEDS 화이트리스트 없음"}
     limit = limit_per_feed or 5
     seen = set() if force else db.kb_document_urls(source="insight")
-    macro, skipped, errors = [], [], []
+    macro, skipped, errors, reviews = [], [], [], []
     for feed in feeds:
         name, url = feed.get("name") or "RSS", feed.get("url")
         if not url:
             continue
+        sk = f"rss:{_source_slug(name)}"
+        src = db.kb_source_ensure(sk, display_name=name, parent_key="rss")
+        if src and (src.get("lifecycle") == "eviction_candidate" or not src.get("enabled")) and not force:
+            skipped.append({"feed": name, "why": "퇴출후보/비활성 — 수집 보류"})
+            continue
+        db.kb_sources_bump_run(sk)
         entries = rss.feed_entries(url, limit=limit)
         if not entries:
             errors.append({"feed": name, "why": "피드 조회 실패/빈 결과"})
+            db.kb_sources_touch(sk, "error", error="피드 조회 실패", rejected=1)
+            reviews.append(evaluate_source_quality(sk))
             continue
         for e in entries:
             link, title = e.get("url") or "", e.get("title") or ""
@@ -946,9 +1026,9 @@ def collect_rss_macro(force: bool = False, limit_per_feed: int | None = None) ->
             raw = (e.get("summary") or "").strip()
             if len(raw) < 40:
                 skipped.append({"title": title, "why": "본문 짧음"})
+                db.kb_sources_touch(sk, "rejected", error="본문 짧음", rejected=1)
                 continue
             summary = _macro_source_summary(title, raw)  # 영문→한국어 시장관점 요약(LLM)
-            sk = f"rss:{_source_slug(name)}"
             r = import_macro(f"[{name}] {title}", raw, url=link, published=e.get("published", ""),
                              summary=summary, rebuild=False,
                              source_key=sk, display_name=name, parent_key="rss")
@@ -958,10 +1038,15 @@ def collect_rss_macro(force: bool = False, limit_per_feed: int | None = None) ->
                     seen.add(link)
             else:
                 skipped.append({"title": title, "why": r.get("reason", "미저장")})
+                why = r.get("reason") or ""
+                if why and "게이트" not in why and "퇴출" not in why and "비활성" not in why and "등록" not in why:
+                    db.kb_sources_touch(sk, "rejected", error=why[:200], rejected=1)
+        reviews.append(evaluate_source_quality(sk))
     if macro:
         _rebuild_macro_digest()  # 배치 끝에 1회만
     log.info("RSS 매크로 수집: 거시 %d · 스킵 %d · 오류 %d", len(macro), len(skipped), len(errors))
-    return {"ok": True, "macro": macro, "skipped": skipped, "errors": errors}
+    return {"ok": True, "macro": macro, "skipped": skipped, "errors": errors,
+            "source_reviews": reviews}
 
 
 def build_macro_digest(items: list[dict]) -> dict:

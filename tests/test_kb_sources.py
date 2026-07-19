@@ -52,6 +52,7 @@ def test_ingest_accepts_manual_and_lazy_child(tmp_path, monkeypatch):
     assert child["ok"] is True
     ch = db.kb_source_get("youtube:@testchan")
     assert ch and ch["source_family"] == "youtube" and ch["trust_tier"] == "medium"
+    assert ch["lifecycle"] == "probation"
 
 
 def test_ingest_stock_batch_gate(tmp_path, monkeypatch):
