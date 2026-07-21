@@ -106,6 +106,9 @@ def test_index_has_trust_and_onboard_ui(tmp_path, monkeypatch):
     assert ">페이퍼<" in html  # 탭명 (구 '내 자산')
     assert 'id="sig-precision"' in html
     assert "정밀도 우선" in html
+    assert "is-empty-buy" in html  # 매수권 0일 히어로
+    assert "trust-paper-muted" in html  # 페이퍼 승률 ≠ 실측 헤드라인
+    assert "고장 아님" in html
     assert "적중률 공개" not in html  # 공개 적중률 카피 폐기
     assert "매수권" in html  # evidence-only 라벨
     assert 'id="ob-step-desk"' in html  # 온보딩 3스텝: 데스크 용어 안내
